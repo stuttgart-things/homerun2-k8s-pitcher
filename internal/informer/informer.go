@@ -65,13 +65,13 @@ func (m *Manager) Start(ctx context.Context) {
 
 		handler := cache.ResourceEventHandlerFuncs{}
 		if wantEvents["add"] {
-			handler.AddFunc = m.makeAddHandler(gvr, spec)
+			handler.AddFunc = m.makeAddHandler(gvr)
 		}
 		if wantEvents["update"] {
-			handler.UpdateFunc = m.makeUpdateHandler(gvr, spec)
+			handler.UpdateFunc = m.makeUpdateHandler(gvr)
 		}
 		if wantEvents["delete"] {
-			handler.DeleteFunc = m.makeDeleteHandler(gvr, spec)
+			handler.DeleteFunc = m.makeDeleteHandler(gvr)
 		}
 
 		if _, err := informer.AddEventHandler(handler); err != nil {
@@ -98,8 +98,8 @@ func (m *Manager) Start(ctx context.Context) {
 	slog.Info("informer manager stopped")
 }
 
-func (m *Manager) makeAddHandler(gvr schema.GroupVersionResource, spec profile.InformerSpec) func(obj interface{}) {
-	return func(obj interface{}) {
+func (m *Manager) makeAddHandler(gvr schema.GroupVersionResource) func(obj any) {
+	return func(obj any) {
 		u, ok := obj.(*unstructured.Unstructured)
 		if !ok {
 			return
@@ -108,8 +108,8 @@ func (m *Manager) makeAddHandler(gvr schema.GroupVersionResource, spec profile.I
 	}
 }
 
-func (m *Manager) makeUpdateHandler(gvr schema.GroupVersionResource, spec profile.InformerSpec) func(oldObj, newObj interface{}) {
-	return func(_, newObj interface{}) {
+func (m *Manager) makeUpdateHandler(gvr schema.GroupVersionResource) func(oldObj, newObj any) {
+	return func(_, newObj any) {
 		u, ok := newObj.(*unstructured.Unstructured)
 		if !ok {
 			return
@@ -118,8 +118,8 @@ func (m *Manager) makeUpdateHandler(gvr schema.GroupVersionResource, spec profil
 	}
 }
 
-func (m *Manager) makeDeleteHandler(gvr schema.GroupVersionResource, spec profile.InformerSpec) func(obj interface{}) {
-	return func(obj interface{}) {
+func (m *Manager) makeDeleteHandler(gvr schema.GroupVersionResource) func(obj any) {
+	return func(obj any) {
 		// Handle DeletedFinalStateUnknown (tombstone)
 		if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 			obj = d.Obj
