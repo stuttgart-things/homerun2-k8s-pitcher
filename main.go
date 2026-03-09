@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/banner"
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/config"
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/handlers"
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/middleware"
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/pitcher"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/banner"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/config"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/handlers"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/middleware"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 
 	homerun "github.com/stuttgart-things/homerun-library/v2"
 )
@@ -29,7 +29,7 @@ func main() {
 	banner.Show()
 	config.SetupLogging()
 
-	slog.Info("starting homerun2-homerun2-k8s-pitcher",
+	slog.Info("starting homerun2-k8s-pitcher",
 		"version", version,
 		"commit", commit,
 		"date", date,

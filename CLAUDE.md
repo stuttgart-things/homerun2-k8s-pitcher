@@ -2,7 +2,7 @@
 
 ## Project
 
-homerun2-homerun2-k8s-pitcher — Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
+homerun2-k8s-pitcher — Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
 
 ## Tech Stack
 

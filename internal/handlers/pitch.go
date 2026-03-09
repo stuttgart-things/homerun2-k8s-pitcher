@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/models"
-	"github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/internal/pitcher"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/models"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 
 	homerun "github.com/stuttgart-things/homerun-library/v2"
 )
@@ -46,7 +46,7 @@ func NewPitchHandler(p pitcher.Pitcher) http.HandlerFunc {
 			msg.Timestamp = time.Now().Format(time.RFC3339)
 		}
 		if msg.System == "" {
-			msg.System = "homerun2-homerun2-k8s-pitcher"
+			msg.System = "homerun2-k8s-pitcher"
 		}
 
 		objectID, streamID, err := p.Pitch(msg)

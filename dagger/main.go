@@ -1,4 +1,4 @@
-// Dagger CI module for homerun2-homerun2-k8s-pitcher
+// Dagger CI module for homerun2-k8s-pitcher
 //
 // Provides build, lint, test, image build, and security scanning functions.
 // Delegates to external stuttgart-things Dagger modules where possible.
@@ -62,7 +62,7 @@ func (m *Dagger) BuildImage(
 	ctx context.Context,
 	src *dagger.Directory,
 	// +optional
-	// +default="ko.local/homerun2-homerun2-k8s-pitcher"
+	// +default="ko.local/homerun2-k8s-pitcher"
 	repo string,
 	// +optional
 	// +default="false"
@@ -207,7 +207,7 @@ exit 0
 // with a delay between each, verifies HTTP responses, and returns a test report.
 func (m *Dagger) SmokeTest(
 	ctx context.Context,
-	// The base URL of the deployed pitcher (e.g., https://homerun2-homerun2-k8s-pitcher.example.com)
+	// The base URL of the deployed pitcher (e.g., https://homerun2-k8s-pitcher.example.com)
 	endpoint string,
 	// Bearer token for authentication
 	authToken *dagger.Secret,

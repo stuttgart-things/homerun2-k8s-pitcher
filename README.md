@@ -1,8 +1,8 @@
-# homerun2-homerun2-k8s-pitcher
+# homerun2-k8s-pitcher
 
 Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
 
-[![Build & Test](https://github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/actions/workflows/build-test.yaml/badge.svg)](https://github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/actions/workflows/build-test.yaml)
+[![Build & Test](https://github.com/stuttgart-things/homerun2-k8s-pitcher/actions/workflows/build-test.yaml/badge.svg)](https://github.com/stuttgart-things/homerun2-k8s-pitcher/actions/workflows/build-test.yaml)
 
 ## API Endpoints
 
@@ -20,7 +20,7 @@ curl -X POST http://localhost:8080/pitch \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Test Notification",
-    "message": "Hello from homerun2-homerun2-k8s-pitcher",
+    "message": "Hello from homerun2-k8s-pitcher",
     "severity": "info",
     "author": "test"
   }'
@@ -34,14 +34,14 @@ curl -X POST http://localhost:8080/pitch \
 <summary><b>Container image (ko / ghcr.io)</b></summary>
 
 ```bash
-docker pull ghcr.io/stuttgart-things/homerun2-homerun2-k8s-pitcher:<tag>
+docker pull ghcr.io/stuttgart-things/homerun2-k8s-pitcher:<tag>
 
 docker run \
   -e REDIS_ADDR=redis -e REDIS_PORT=6379 \
   -e REDIS_STREAM=homerun \
   -e AUTH_TOKEN=mysecret \
   -p 8080:8080 \
-  ghcr.io/stuttgart-things/homerun2-homerun2-k8s-pitcher:<tag>
+  ghcr.io/stuttgart-things/homerun2-k8s-pitcher:<tag>
 ```
 
 </details>
@@ -83,5 +83,5 @@ task build-scan-image-ko
 
 ## Links
 
-- [Releases](https://github.com/stuttgart-things/homerun2-homerun2-k8s-pitcher/releases)
+- [Releases](https://github.com/stuttgart-things/homerun2-k8s-pitcher/releases)
 - [homerun-library](https://github.com/stuttgart-things/homerun-library)
