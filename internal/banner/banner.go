@@ -22,8 +22,6 @@ const serviceText = `HOMERUN2-K8S-PITCHER`
 
 const glitchChars = "░▒▓█▄▀▐▌╠╣╬═║╗╝╚╔"
 
-const fieldWidth = 70
-
 var (
 	primaryColor = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF6600")).

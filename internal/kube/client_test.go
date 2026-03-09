@@ -10,7 +10,7 @@ import (
 )
 
 func TestResolveSecret(t *testing.T) {
-	fakeClient := fake.NewSimpleClientset(&corev1.Secret{
+	fakeClient := fake.NewClientset(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "redis-credentials",
 			Namespace: "homerun2",
@@ -32,7 +32,7 @@ func TestResolveSecret(t *testing.T) {
 }
 
 func TestResolveSecretMissingKey(t *testing.T) {
-	fakeClient := fake.NewSimpleClientset(&corev1.Secret{
+	fakeClient := fake.NewClientset(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "redis-credentials",
 			Namespace: "homerun2",
@@ -51,7 +51,7 @@ func TestResolveSecretMissingKey(t *testing.T) {
 }
 
 func TestResolveSecretNotFound(t *testing.T) {
-	fakeClient := fake.NewSimpleClientset()
+	fakeClient := fake.NewClientset()
 
 	c := &Client{Clientset: fakeClient}
 
