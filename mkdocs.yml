@@ -1,0 +1,9 @@
+site_name: Homerun2-homerun2-k8s-pitcher
+site_description: Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
+nav:
+  - Home: index.md
+  - API Usage: api-usage.md
+  - Deployment: deployment.md
+  - CI/CD: cicd.md
+plugins:
+  - techdocs-core
