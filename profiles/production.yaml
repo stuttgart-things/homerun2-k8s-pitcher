@@ -1,0 +1,45 @@
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: movie-scripts
+spec:
+  redis:
+    addr: redis-stack.homerun2.svc.cluster.local
+    port: "6379"
+    stream: k8s-events
+    passwordFrom:
+      secretKeyRef:
+        name: redis-credentials
+        namespace: homerun2
+        key: password
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: pitcher-auth
+        namespace: homerun2
+        key: token
+  collectors:
+    - kind: Node
+      interval: 60s
+    - kind: Pod
+      namespace: "*"
+      interval: 30s
+    - kind: Event
+      namespace: "*"
+      interval: 15s
+  informers:
+    - group: ""
+      version: v1
+      resource: pods
+      namespace: "*"
+      events: [add, update, delete]
+    - group: apps
+      version: v1
+      resource: deployments
+      namespace: homerun2
+      events: [add, update, delete]
+    - group: "mycrd.example.io"
+      version: v1alpha1
+      resource: myresources
+      namespace: default
+      events: [add, delete]

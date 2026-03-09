@@ -1,0 +1,32 @@
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: dev-cluster
+spec:
+  redis:
+    addr: localhost
+    port: "6379"
+    stream: k8s-events
+    password: changeme
+  auth:
+    token: changeme
+  collectors:
+    - kind: Node
+      interval: 60s
+    - kind: Pod
+      namespace: "*"
+      interval: 30s
+    - kind: Event
+      namespace: "*"
+      interval: 15s
+  informers:
+    - group: ""
+      version: v1
+      resource: pods
+      namespace: "*"
+      events: [add, update, delete]
+    - group: apps
+      version: v1
+      resource: deployments
+      namespace: homerun2
+      events: [add, update, delete]

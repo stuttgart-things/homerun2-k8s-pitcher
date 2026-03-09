@@ -7,6 +7,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stuttgart-things/homerun-library/v2 v2.0.1-0.20260307163657-17be19573fe0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -220,6 +221,5 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
