@@ -2,16 +2,45 @@
 
 ## Project
 
-homerun2-homerun2-k8s-pitcher — Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
+homerun2-k8s-pitcher — Go microservice that watches a Kubernetes cluster via informers and collectors, pitching real-time events and periodic snapshots to Redis Streams.
 
 ## Tech Stack
 
 - **Language**: Go 1.24+
-- **HTTP**: stdlib `net/http` (no framework)
+- **K8s client**: `k8s.io/client-go` (dynamic informers)
 - **Queue**: Redis Streams via `homerun-library`
+- **Config**: YAML profile (`K8sPitcherProfile`)
 - **Build**: ko (`.ko.yaml`), no Dockerfile
 - **CI**: Dagger modules (`dagger/main.go`), Taskfile
-- **Infra**: GitHub Actions, semantic-release, renovate
+- **Deploy**: KCL manifests (`kcl/`), GitHub Actions, semantic-release
+
+## Architecture
+
+```
+K8s API → informers (real-time add/update/delete)  → Redis Streams
+        → collectors (periodic snapshots)           → Redis Streams
+```
+
+## Key Paths
+
+- `main.go` — entrypoint: flag parsing, profile loading, orchestration
+- `internal/profile/` — K8sPitcherProfile types and YAML loader
+- `internal/kube/` — K8s client init (kubeconfig + in-cluster), secret resolution
+- `internal/collector/` — periodic snapshot gatherers (Node, Pod, Event)
+- `internal/informer/` — dynamic informer manager (any GVR including CRDs)
+- `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
+- `internal/config/` — logging setup
+- `profiles/` — example YAML profiles (dev, production)
+
+## CLI Usage
+
+```bash
+# CLI mode with kubeconfig
+homerun2-k8s-pitcher --profile profiles/dev.yaml --kubeconfig ~/.kube/config
+
+# In-cluster (profile mounted as ConfigMap)
+homerun2-k8s-pitcher --profile /etc/k8s-pitcher/profile.yaml
+```
 
 ## Git Workflow
 
@@ -32,14 +61,14 @@ homerun2-homerun2-k8s-pitcher — Microservice that watches a Kubernetes cluster
 ## Code Conventions
 
 - No Dockerfile — use ko for image builds
-- Config via environment variables, loaded once at startup
-- Tests: `go test ./...` — unit tests must not require Redis
+- Config via YAML profile, secrets resolved from K8s or inline
+- Tests: `go test ./...` — unit tests must not require Redis or K8s cluster
 
 ## Testing
 
 ```bash
 go test ./...
-task build-test-binary
 task lint
+task build-test-binary
 task build-scan-image-ko
 ```
