@@ -3,7 +3,7 @@ module github.com/stuttgart-things/homerun2-k8s-pitcher
 go 1.25.0
 
 require (
-	charm.land/bubbletea/v2 v2.0.1
+	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stuttgart-things/homerun-library/v2 v2.0.1-0.20260307163657-17be19573fe0
