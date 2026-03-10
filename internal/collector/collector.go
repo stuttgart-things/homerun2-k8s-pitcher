@@ -15,6 +15,7 @@ import (
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/summary"
 )
 
 // gvrForKind maps collector kind names to their GVR.
@@ -122,6 +123,7 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 			Namespace: item.GetNamespace(),
 			Name:      item.GetName(),
 			Object:    obj,
+			Summary:   summary.SummarizeText(spec.Kind, obj),
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 			Cluster:   c.clusterName,
 		}

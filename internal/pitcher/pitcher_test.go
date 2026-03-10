@@ -171,7 +171,7 @@ func TestHTTPK8sPitcherPitch(t *testing.T) {
 	var gotContentType string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.Header.Get("X-Auth-Token")
+		gotToken = r.Header.Get("Authorization")
 		gotContentType = r.Header.Get("Content-Type")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
@@ -195,8 +195,8 @@ func TestHTTPK8sPitcherPitch(t *testing.T) {
 		t.Fatalf("Pitch() error: %v", err)
 	}
 
-	if gotToken != "test-token" {
-		t.Errorf("X-Auth-Token = %q, want %q", gotToken, "test-token")
+	if gotToken != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want %q", gotToken, "Bearer test-token")
 	}
 	if gotContentType != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", gotContentType, "application/json")
@@ -206,7 +206,7 @@ func TestHTTPK8sPitcherPitch(t *testing.T) {
 	}
 
 	body := string(gotBody)
-	for _, want := range []string{`"Author": "k8s-pitcher"`, `"System": "test-cluster"`, `"Severity": "info"`} {
+	for _, want := range []string{`"author":"k8s-pitcher"`, `"system":"test-cluster"`, `"severity":"info"`} {
 		if !contains(body, want) {
 			t.Errorf("body missing %q\nbody: %s", want, body)
 		}
@@ -238,7 +238,7 @@ func TestHTTPK8sPitcherPitchServerError(t *testing.T) {
 func TestHTTPK8sPitcherHealthCheck(t *testing.T) {
 	var gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.Header.Get("X-Auth-Token")
+		gotToken = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -248,8 +248,8 @@ func TestHTTPK8sPitcherHealthCheck(t *testing.T) {
 	if err := p.HealthCheck(context.Background()); err != nil {
 		t.Fatalf("HealthCheck() error: %v", err)
 	}
-	if gotToken != "hc-token" {
-		t.Errorf("X-Auth-Token = %q, want %q", gotToken, "hc-token")
+	if gotToken != "Bearer hc-token" {
+		t.Errorf("Authorization = %q, want %q", gotToken, "Bearer hc-token")
 	}
 }
 

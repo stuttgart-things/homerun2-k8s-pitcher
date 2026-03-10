@@ -16,6 +16,7 @@ import (
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/summary"
 )
 
 const defaultResync = 0 // no periodic resync — rely on watch events
@@ -143,12 +144,15 @@ func (m *Manager) pitchEvent(u *unstructured.Unstructured, eventType string, gvr
 		return
 	}
 
+	kind := u.GetKind()
+
 	event := pitcher.K8sEvent{
-		Kind:      u.GetKind(),
+		Kind:      kind,
 		EventType: eventType,
 		Namespace: u.GetNamespace(),
 		Name:      u.GetName(),
 		Object:    objMap,
+		Summary:   summary.SummarizeText(kind, objMap),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Cluster:   m.clusterName,
 	}

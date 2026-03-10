@@ -1,10 +1,14 @@
 package pitcher
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -22,6 +26,7 @@ type K8sEvent struct {
 	Namespace string         `json:"namespace"`
 	Name      string         `json:"name"`
 	Object    map[string]any `json:"object"`
+	Summary   string         `json:"summary,omitempty"` // human-readable text summary
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
 }
@@ -65,14 +70,18 @@ func (p *RedisK8sPitcher) HealthCheck(ctx context.Context) error {
 }
 
 func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
-	objectJSON, err := json.Marshal(event.Object)
-	if err != nil {
-		return fmt.Errorf("marshaling object: %w", err)
+	message := event.Summary
+	if message == "" {
+		objectJSON, err := json.Marshal(event.Object)
+		if err != nil {
+			return fmt.Errorf("marshaling object: %w", err)
+		}
+		message = string(objectJSON)
 	}
 
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
-		Message:   string(objectJSON),
+		Message:   message,
 		Severity:  severityFor(event.EventType),
 		Author:    "k8s-pitcher",
 		Timestamp: event.Timestamp,
@@ -135,15 +144,17 @@ func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
 		Tags:      "health-check",
 	}
 
-	body, err := homerun.RenderBody(homerun.HomeRunBodyData, msg)
+	body, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("rendering health check body: %w", err)
+		return fmt.Errorf("marshaling health check body: %w", err)
 	}
 
-	_, resp, err := homerun.SendToHomerun(p.Addr, p.Token, []byte(body), p.Insecure)
+	resp, err := p.post(body)
 	if err != nil {
 		return fmt.Errorf("pitcher health check failed: %w", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("pitcher health check returned status %d", resp.StatusCode)
 	}
@@ -151,14 +162,18 @@ func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
 }
 
 func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
-	objectJSON, err := json.Marshal(event.Object)
-	if err != nil {
-		return fmt.Errorf("marshaling object: %w", err)
+	message := event.Summary
+	if message == "" {
+		objectJSON, err := json.Marshal(event.Object)
+		if err != nil {
+			return fmt.Errorf("marshaling object: %w", err)
+		}
+		message = string(objectJSON)
 	}
 
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
-		Message:   string(objectJSON),
+		Message:   message,
 		Severity:  severityFor(event.EventType),
 		Author:    "k8s-pitcher",
 		Timestamp: event.Timestamp,
@@ -166,15 +181,17 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
 	}
 
-	body, err := homerun.RenderBody(homerun.HomeRunBodyData, msg)
+	body, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("rendering message body: %w", err)
+		return fmt.Errorf("marshaling message body: %w", err)
 	}
 
-	_, resp, err := homerun.SendToHomerun(p.Addr, p.Token, []byte(body), p.Insecure)
+	resp, err := p.post(body)
 	if err != nil {
 		return fmt.Errorf("sending to pitcher: %w", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("pitcher returned status %d", resp.StatusCode)
 	}
@@ -186,6 +203,32 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 		"status", resp.StatusCode,
 	)
 	return nil
+}
+
+// post sends a JSON body to the pitcher endpoint with Bearer token auth.
+func (p *HTTPK8sPitcher) post(body []byte) (*http.Response, error) {
+	req, err := http.NewRequest("POST", p.Addr, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: p.Insecure}, //nolint:gosec // caller-controlled
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+
+	// Drain the body so the connection can be reused, but keep resp open for caller.
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp, nil
 }
 
 // FileK8sPitcher writes K8s events as JSON lines to a file (dev/testing mode).
