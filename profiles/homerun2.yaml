@@ -1,0 +1,34 @@
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: homerun2-cluster
+spec:
+  pitcher:
+    addr: https://pitcher.movie-scripts2.sthings-vsphere.labul.sva.de/pitch
+    insecure: true
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: homerun2-omni-pitcher-token
+        namespace: homerun2-flux
+        key: auth-token
+  collectors:
+    # - kind: Node
+    #   interval: 60s
+    # - kind: Pod
+    #   namespace: "*"
+    #   interval: 30s
+    - kind: Event
+      namespace: "*"
+      interval: 15s
+  # informers:
+  #   - group: ""
+  #     version: v1
+  #     resource: pods
+  #     namespace: "*"
+  #     events: [add, update, delete]
+  #   - group: apps
+  #     version: v1
+  #     resource: deployments
+  #     namespace: homerun2-flux
+  #     events: [add, update, delete]

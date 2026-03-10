@@ -1,27 +1,24 @@
-# homerun2-homerun2-k8s-pitcher
+# homerun2-k8s-pitcher
 
-Microservice that watches a Kubernetes cluster and pitches gathered information and real-time events to Redis Streams
+Go microservice that watches a Kubernetes cluster via dynamic informers and periodic collectors, pitching real-time events and snapshots to Redis Streams.
 
 ## Quick Start
 
 ```bash
-# Run with Redis
-export REDIS_ADDR=localhost REDIS_PORT=6379 REDIS_STREAM=homerun AUTH_TOKEN=mysecret
-go run .
+# CLI mode with kubeconfig
+homerun2-k8s-pitcher --profile profiles/dev.yaml --kubeconfig ~/.kube/config
 
-# Dev mode (no Redis)
-PITCHER_MODE=file AUTH_TOKEN=test go run .
+# Dev mode (file pitcher, no Redis)
+PITCHER_MODE=file homerun2-k8s-pitcher --profile profiles/dev.yaml --kubeconfig ~/.kube/config
 ```
-
-## API Endpoints
-
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/health` | `GET` | None | Health check |
-| `/pitch` | `POST` | Bearer token | Submit a message to Redis Streams |
 
 ## Architecture
 
 ```
-HTTP POST /pitch → homerun2-homerun2-k8s-pitcher → Redis Stream (homerun)
+K8s API → informers (real-time add/update/delete)  → Redis Streams
+        → collectors (periodic snapshots)           → Redis Streams
 ```
+
+## Configuration
+
+All configuration is done via a YAML profile. See `profiles/` for examples.

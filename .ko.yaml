@@ -1,6 +1,6 @@
 defaultBaseImage: cgr.dev/chainguard/static:latest
 builds:
-  - id: homerun2-homerun2-k8s-pitcher
+  - id: homerun2-k8s-pitcher
     main: .
     flags:
       - -trimpath
