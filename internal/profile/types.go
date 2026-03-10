@@ -18,8 +18,15 @@ type Spec struct {
 	Redis      RedisConfig     `yaml:"redis"`
 	Pitcher    PitcherConfig   `yaml:"pitcher"`
 	Auth       AuthConfig      `yaml:"auth"`
+	Webhook    WebhookConfig   `yaml:"webhook"`
 	Collectors []CollectorSpec `yaml:"collectors"`
 	Informers  []InformerSpec  `yaml:"informers"`
+}
+
+type WebhookConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Port    string `yaml:"port"`
+	HMACKey string `yaml:"hmacKey"`
 }
 
 type PitcherConfig struct {
