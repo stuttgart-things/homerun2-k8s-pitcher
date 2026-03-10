@@ -165,7 +165,7 @@ func TestLoadValidationErrors(t *testing.T) {
 		yaml string
 	}{
 		{
-			name: "missing redis addr",
+			name: "missing both redis and pitcher addr",
 			yaml: `
 spec:
   redis:
@@ -181,6 +181,20 @@ spec:
 spec:
   redis:
     addr: localhost
+  collectors:
+    - kind: Node
+      interval: 10s
+`,
+		},
+		{
+			name: "redis and pitcher mutually exclusive",
+			yaml: `
+spec:
+  redis:
+    addr: localhost
+    stream: test
+  pitcher:
+    addr: https://pitcher.example.com
   collectors:
     - kind: Node
       interval: 10s
@@ -251,6 +265,48 @@ spec:
 				t.Error("Load() expected error, got nil")
 			}
 		})
+	}
+}
+
+func TestLoadPitcherProfile(t *testing.T) {
+	yaml := `
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: pitcher-cluster
+spec:
+  pitcher:
+    addr: https://pitcher.example.com
+    insecure: true
+  auth:
+    token: mytoken
+  collectors:
+    - kind: Node
+      interval: 60s
+  informers:
+    - group: ""
+      version: v1
+      resource: pods
+      namespace: "*"
+      events: [add, update, delete]
+`
+	path := writeTempFile(t, yaml)
+	p, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if p.Spec.Pitcher.Addr != "https://pitcher.example.com" {
+		t.Errorf("pitcher.addr = %q, want %q", p.Spec.Pitcher.Addr, "https://pitcher.example.com")
+	}
+	if !p.Spec.Pitcher.Insecure {
+		t.Error("pitcher.insecure = false, want true")
+	}
+	if p.Spec.Auth.Token != "mytoken" {
+		t.Errorf("auth.token = %q, want %q", p.Spec.Auth.Token, "mytoken")
+	}
+	if p.Spec.Redis.Addr != "" {
+		t.Errorf("redis.addr should be empty, got %q", p.Spec.Redis.Addr)
 	}
 }
 

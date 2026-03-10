@@ -72,6 +72,25 @@ func main() {
 		}
 		p = &pitcher.FileK8sPitcher{Path: filePath}
 		slog.Info("pitcher mode: file", "path", filePath)
+	} else if prof.Spec.Pitcher.Addr != "" {
+		hp := pitcher.NewHTTPK8sPitcher(
+			prof.Spec.Pitcher.Addr,
+			prof.Spec.Auth.Token,
+			prof.Spec.Pitcher.Insecure,
+			kubeClient.ClusterName,
+		)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := hp.HealthCheck(ctx); err != nil {
+			slog.Error("pitcher health check failed", "error", err)
+			cancel()
+			os.Exit(1)
+		}
+		cancel()
+		p = hp
+		slog.Info("pitcher mode: http",
+			"addr", prof.Spec.Pitcher.Addr,
+			"insecure", prof.Spec.Pitcher.Insecure,
+		)
 	} else {
 		rp := pitcher.NewRedisK8sPitcher(prof.Spec.Redis, kubeClient.ClusterName)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

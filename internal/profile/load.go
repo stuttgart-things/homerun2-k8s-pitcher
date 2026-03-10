@@ -28,10 +28,16 @@ func Load(path string) (*K8sPitcherProfile, error) {
 }
 
 func validate(p *K8sPitcherProfile) error {
-	if p.Spec.Redis.Addr == "" {
-		return fmt.Errorf("spec.redis.addr is required")
+	hasRedis := p.Spec.Redis.Addr != ""
+	hasPitcher := p.Spec.Pitcher.Addr != ""
+
+	if !hasRedis && !hasPitcher {
+		return fmt.Errorf("either spec.redis.addr or spec.pitcher.addr is required")
 	}
-	if p.Spec.Redis.Stream == "" {
+	if hasRedis && hasPitcher {
+		return fmt.Errorf("spec.redis and spec.pitcher are mutually exclusive")
+	}
+	if hasRedis && p.Spec.Redis.Stream == "" {
 		return fmt.Errorf("spec.redis.stream is required")
 	}
 	if len(p.Spec.Collectors) == 0 && len(p.Spec.Informers) == 0 {

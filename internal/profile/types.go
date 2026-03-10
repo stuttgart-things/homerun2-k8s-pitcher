@@ -16,9 +16,15 @@ type Metadata struct {
 
 type Spec struct {
 	Redis      RedisConfig     `yaml:"redis"`
+	Pitcher    PitcherConfig   `yaml:"pitcher"`
 	Auth       AuthConfig      `yaml:"auth"`
 	Collectors []CollectorSpec `yaml:"collectors"`
 	Informers  []InformerSpec  `yaml:"informers"`
+}
+
+type PitcherConfig struct {
+	Addr     string `yaml:"addr"`
+	Insecure bool   `yaml:"insecure"`
 }
 
 type RedisConfig struct {

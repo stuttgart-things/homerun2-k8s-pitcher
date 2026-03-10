@@ -3,12 +3,20 @@ package pitcher
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 )
+
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
 
 func TestFileK8sPitcher(t *testing.T) {
 	dir := t.TempDir()
@@ -137,5 +145,124 @@ func TestNewRedisK8sPitcher(t *testing.T) {
 	}
 	if p.System != "my-cluster" {
 		t.Errorf("System = %q, want %q", p.System, "my-cluster")
+	}
+}
+
+func TestNewHTTPK8sPitcher(t *testing.T) {
+	p := NewHTTPK8sPitcher("https://pitcher.example.com", "my-token", true, "test-cluster")
+
+	if p.Addr != "https://pitcher.example.com" {
+		t.Errorf("Addr = %q, want %q", p.Addr, "https://pitcher.example.com")
+	}
+	if p.Token != "my-token" {
+		t.Errorf("Token = %q, want %q", p.Token, "my-token")
+	}
+	if !p.Insecure {
+		t.Error("Insecure = false, want true")
+	}
+	if p.System != "test-cluster" {
+		t.Errorf("System = %q, want %q", p.System, "test-cluster")
+	}
+}
+
+func TestHTTPK8sPitcherPitch(t *testing.T) {
+	var gotBody []byte
+	var gotToken string
+	var gotContentType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get("X-Auth-Token")
+		gotContentType = r.Header.Get("Content-Type")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	p := NewHTTPK8sPitcher(server.URL, "test-token", false, "test-cluster")
+
+	event := K8sEvent{
+		Kind:      "Pod",
+		EventType: "add",
+		Namespace: "default",
+		Name:      "nginx-abc123",
+		Object:    map[string]any{"apiVersion": "v1", "kind": "Pod"},
+		Timestamp: "2026-03-09T12:00:00Z",
+		Cluster:   "test-cluster",
+	}
+
+	if err := p.Pitch(event); err != nil {
+		t.Fatalf("Pitch() error: %v", err)
+	}
+
+	if gotToken != "test-token" {
+		t.Errorf("X-Auth-Token = %q, want %q", gotToken, "test-token")
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", gotContentType, "application/json")
+	}
+	if len(gotBody) == 0 {
+		t.Fatal("request body is empty")
+	}
+
+	body := string(gotBody)
+	for _, want := range []string{`"Author": "k8s-pitcher"`, `"System": "test-cluster"`, `"Severity": "info"`} {
+		if !contains(body, want) {
+			t.Errorf("body missing %q\nbody: %s", want, body)
+		}
+	}
+}
+
+func TestHTTPK8sPitcherPitchServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	p := NewHTTPK8sPitcher(server.URL, "token", false, "test")
+
+	event := K8sEvent{
+		Kind:      "Node",
+		EventType: "snapshot",
+		Name:      "node-1",
+		Timestamp: "2026-03-09T12:00:00Z",
+		Cluster:   "test",
+	}
+
+	err := p.Pitch(event)
+	if err == nil {
+		t.Fatal("Pitch() expected error for 500 response, got nil")
+	}
+}
+
+func TestHTTPK8sPitcherHealthCheck(t *testing.T) {
+	var gotToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.Header.Get("X-Auth-Token")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	p := NewHTTPK8sPitcher(server.URL, "hc-token", false, "test-cluster")
+
+	if err := p.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("HealthCheck() error: %v", err)
+	}
+	if gotToken != "hc-token" {
+		t.Errorf("X-Auth-Token = %q, want %q", gotToken, "hc-token")
+	}
+}
+
+func TestHTTPK8sPitcherHealthCheckFail(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	p := NewHTTPK8sPitcher(server.URL, "bad-token", false, "test")
+
+	err := p.HealthCheck(context.Background())
+	if err == nil {
+		t.Fatal("HealthCheck() expected error for 401 response, got nil")
 	}
 }

@@ -1,0 +1,78 @@
+---
+# Namespace for test resources
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: homerun2-test
+  labels:
+    app.kubernetes.io/part-of: homerun2-k8s-pitcher
+    purpose: test-events
+---
+# Test Pod — triggers pod informer (add) in all namespaces
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pitcher-pod
+  namespace: homerun2-test
+  labels:
+    app: test-pitcher
+    purpose: test-events
+spec:
+  restartPolicy: Never
+  containers:
+    - name: echo
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'hello from k8s-pitcher test pod' && sleep 30"]
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"
+---
+# Test Deployment in homerun2-flux — triggers deployment informer (add)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-pitcher-deploy
+  namespace: homerun2-flux
+  labels:
+    app: test-pitcher
+    purpose: test-events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-pitcher
+  template:
+    metadata:
+      labels:
+        app: test-pitcher
+        purpose: test-events
+    spec:
+      containers:
+        - name: echo
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'hello from k8s-pitcher test deployment' && sleep 3600"]
+          resources:
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
+---
+# Test Pod in homerun2-flux — triggers pod informer (add) + Event collector
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pitcher-crashloop
+  namespace: homerun2-flux
+  labels:
+    app: test-pitcher-crash
+    purpose: test-events
+spec:
+  restartPolicy: Always
+  containers:
+    - name: crash
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'crashing on purpose' && exit 1"]
+      resources:
+        limits:
+          memory: "32Mi"
+          cpu: "50m"

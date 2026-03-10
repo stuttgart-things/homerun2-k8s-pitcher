@@ -106,6 +106,88 @@ func severityFor(eventType string) string {
 	}
 }
 
+// HTTPK8sPitcher sends K8s events to an omni-pitcher HTTP endpoint.
+type HTTPK8sPitcher struct {
+	Addr     string // pitcher HTTP(S) URL
+	Token    string // auth token sent via X-Auth-Token header
+	Insecure bool   // skip TLS verification
+	System   string // cluster identity
+}
+
+// NewHTTPK8sPitcher creates a pitcher that POSTs events to the omni-pitcher endpoint.
+func NewHTTPK8sPitcher(addr, token string, insecure bool, clusterName string) *HTTPK8sPitcher {
+	return &HTTPK8sPitcher{
+		Addr:     addr,
+		Token:    token,
+		Insecure: insecure,
+		System:   clusterName,
+	}
+}
+
+func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
+	msg := homerun.Message{
+		Title:     "health-check",
+		Message:   "k8s-pitcher health check",
+		Severity:  "info",
+		Author:    "k8s-pitcher",
+		Timestamp: time.Now().Format(time.RFC3339),
+		System:    p.System,
+		Tags:      "health-check",
+	}
+
+	body, err := homerun.RenderBody(homerun.HomeRunBodyData, msg)
+	if err != nil {
+		return fmt.Errorf("rendering health check body: %w", err)
+	}
+
+	_, resp, err := homerun.SendToHomerun(p.Addr, p.Token, []byte(body), p.Insecure)
+	if err != nil {
+		return fmt.Errorf("pitcher health check failed: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("pitcher health check returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
+	objectJSON, err := json.Marshal(event.Object)
+	if err != nil {
+		return fmt.Errorf("marshaling object: %w", err)
+	}
+
+	msg := homerun.Message{
+		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
+		Message:   string(objectJSON),
+		Severity:  severityFor(event.EventType),
+		Author:    "k8s-pitcher",
+		Timestamp: event.Timestamp,
+		System:    p.System,
+		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
+	}
+
+	body, err := homerun.RenderBody(homerun.HomeRunBodyData, msg)
+	if err != nil {
+		return fmt.Errorf("rendering message body: %w", err)
+	}
+
+	_, resp, err := homerun.SendToHomerun(p.Addr, p.Token, []byte(body), p.Insecure)
+	if err != nil {
+		return fmt.Errorf("sending to pitcher: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("pitcher returned status %d", resp.StatusCode)
+	}
+
+	slog.Debug("event pitched via HTTP",
+		"kind", event.Kind,
+		"name", event.Name,
+		"eventType", event.EventType,
+		"status", resp.StatusCode,
+	)
+	return nil
+}
+
 // FileK8sPitcher writes K8s events as JSON lines to a file (dev/testing mode).
 type FileK8sPitcher struct {
 	Path string
