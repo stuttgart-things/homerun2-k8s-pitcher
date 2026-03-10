@@ -47,13 +47,6 @@ deployment = {
                                 value: "info"
                             }
                         ]
-                        envFrom: if config.extraEnvVars then [
-                            {
-                                configMapRef: {
-                                    name: "{}-env".format(config.name)
-                                }
-                            }
-                        ] else []
                         resources: {
                             requests: {
                                 cpu: config.cpuRequest
@@ -63,15 +56,6 @@ deployment = {
                                 cpu: config.cpuLimit
                                 memory: config.memoryLimit
                             }
-                        }
-                        livenessProbe: {
-                            exec: {
-                                command: ["cat", "/tmp/healthy"]
-                            }
-                            initialDelaySeconds: 15
-                            periodSeconds: 30
-                            timeoutSeconds: 5
-                            failureThreshold: 3
                         }
                         securityContext: {
                             readOnlyRootFilesystem: True
@@ -94,6 +78,21 @@ deployment = {
                         ]
                     }
                 ]
+                affinity: {
+                    podAntiAffinity: {
+                        preferredDuringSchedulingIgnoredDuringExecution: [
+                            {
+                                weight: 100
+                                podAffinityTerm: {
+                                    labelSelector: {
+                                        matchLabels: labels.selectorLabels
+                                    }
+                                    topologyKey: "kubernetes.io/hostname"
+                                }
+                            }
+                        ]
+                    }
+                }
                 securityContext: {
                     runAsNonRoot: True
                     runAsUser: 65532

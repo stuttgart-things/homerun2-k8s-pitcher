@@ -7,7 +7,7 @@ import labels
 
 config = labels.config
 
-# Secret - Redis password
+# Secret - Redis password (for direct Redis pitcher mode)
 secretRedis = {
     apiVersion: "v1"
     kind: "Secret"
@@ -22,7 +22,7 @@ secretRedis = {
     }
 } if config.redisPassword else None
 
-# Secret - Auth token
+# Secret - Auth token (for HTTP pitcher Bearer auth)
 secretToken = {
     apiVersion: "v1"
     kind: "Secret"
@@ -33,6 +33,6 @@ secretToken = {
     }
     type: "Opaque"
     data: {
-        token: base64.encode(config.authToken)
+        "auth-token": base64.encode(config.authToken)
     }
 } if config.authToken else None

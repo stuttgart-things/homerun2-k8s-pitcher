@@ -1,7 +1,6 @@
 ---
-config.image: ghcr.io/stuttgart-things/homerun2-k8s-pitcher:latest
-config.namespace: homerun2
-config.redisPassword: changeme # pragma: allowlist secret
+config.image: ghcr.io/stuttgart-things/homerun2-k8s-pitcher:v0.1.1
+config.namespace: homerun2-flux
 config.authToken: changeme
 config.watchedResources:
   - pods
@@ -18,21 +17,15 @@ config.profileYaml: |
   metadata:
     name: movie-scripts
   spec:
-    redis:
-      addr: redis-stack.homerun2.svc.cluster.local
-      port: "6379"
-      stream: k8s-events
-      passwordFrom:
-        secretKeyRef:
-          name: homerun2-k8s-pitcher-redis
-          namespace: homerun2
-          key: password
+    pitcher:
+      addr: https://pitcher.movie-scripts2.sthings-vsphere.labul.sva.de/pitch
+      insecure: true
     auth:
       tokenFrom:
         secretKeyRef:
           name: homerun2-k8s-pitcher-token
-          namespace: homerun2
-          key: token
+          namespace: homerun2-flux
+          key: auth-token
     collectors:
       - kind: Node
         interval: 60s
@@ -51,5 +44,5 @@ config.profileYaml: |
       - group: apps
         version: v1
         resource: deployments
-        namespace: homerun2
+        namespace: homerun2-flux
         events: [add, update, delete]

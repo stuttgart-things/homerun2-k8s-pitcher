@@ -8,6 +8,8 @@ import schema
 _image = option("config.image")
 _namespace = option("config.namespace")
 _profileYaml = option("config.profileYaml")
+_pitcherAddr = option("config.pitcherAddr")
+_pitcherInsecure = option("config.pitcherInsecure")
 _redisPassword = option("config.redisPassword")
 _authToken = option("config.authToken")
 _watchedResources = option("config.watchedResources") or []
@@ -22,6 +24,10 @@ config: schema.K8sPitcher = schema.K8sPitcher {
         namespace = _namespace
     if _profileYaml:
         profileYaml = _profileYaml
+    if _pitcherAddr:
+        pitcherAddr = _pitcherAddr
+    if _pitcherInsecure:
+        pitcherInsecure = _pitcherInsecure == "true" or _pitcherInsecure == "True"
     if _redisPassword:
         redisPassword = _redisPassword
     if _authToken:
