@@ -546,8 +546,8 @@ github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXl
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/stuttgart-things/homerun-library/v2 v2.0.1-0.20260307163657-17be19573fe0 h1:N5L5EKyCYq/Xfw8cV4JbJAWQDPakyxRpqBCPadeYfpI=
-github.com/stuttgart-things/homerun-library/v2 v2.0.1-0.20260307163657-17be19573fe0/go.mod h1:aRjTENEjHJTKHe0YOQxUNwKqDT0eVD2PRD2AJMTiKeU=
+github.com/stuttgart-things/homerun-library/v3 v3.0.4 h1:QsuSnE9ui+qLBcwKKsm4Ls6dvqyI87HZy0h3Fcj4J70=
+github.com/stuttgart-things/homerun-library/v3 v3.0.4/go.mod h1:mVBDKcIWeXj+qDiooX0RkS5PpxPZ+JOs5kpPc+jeD9A=
 github.com/stuttgart-things/redisqueue v0.0.0-20230628084515-1d31f7874df7 h1:nVooDvBYhBPQysVjbvWP3S1CQgmNG/Vovt+ahmv9Cas=
 github.com/stuttgart-things/redisqueue v0.0.0-20230628084515-1d31f7874df7/go.mod h1:RhH+7myjNLGs/BFeYO5U7ekmM7OsymsIOUN/DkewR3g=
 github.com/stuttgart-things/sthingsBase v0.1.41 h1:0aRlEqYilwaJAl9lqv17ZxXXtYAwONw4Rk0X/SLJ+BI=
