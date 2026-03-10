@@ -59,6 +59,8 @@ kubectl apply -f /tmp/rendered-k8s-pitcher.yaml
 | `config.redisPassword` | *(empty)* | Redis password (creates Secret if set) |
 | `config.watchedResources` | `[pods, nodes, events, ...]` | K8s resources for RBAC ClusterRole |
 | `config.watchedApiGroups` | `["", "apps"]` | API groups for RBAC ClusterRole |
+| `config.trustBundleConfigMap` | *(empty)* | ConfigMap name with `trust-bundle.pem` for custom CA (adds volume mount + `SSL_CERT_DIR`) |
+| `config.extraRbacRules` | `[]` | Extra RBAC rules for CRDs (list of `{apiGroups, resources, verbs}`) |
 | `config.extraEnvVars` | `{}` | Additional environment variables |
 | `config.cpuRequest` | `100m` | CPU request |
 | `config.cpuLimit` | `500m` | CPU limit |
@@ -74,6 +76,7 @@ kubectl apply -f /tmp/rendered-k8s-pitcher.yaml
 config.image: ghcr.io/stuttgart-things/homerun2-k8s-pitcher:v0.1.1
 config.namespace: homerun2-flux
 config.authToken: <your-token>
+config.trustBundleConfigMap: cluster-trust-bundle
 config.watchedResources:
   - pods
   - nodes
@@ -149,4 +152,26 @@ config.profileYaml: |
       - kind: Pod
         namespace: "*"
         interval: 30s
+```
+
+### Watching Custom Resources (CRDs)
+
+To watch CRDs, add the CRD's API group/resource to `extraRbacRules` in the deploy profile, and add a matching informer entry in `profileYaml`:
+
+```yaml
+# Deploy profile — add RBAC for your CRD
+config.extraRbacRules:
+  - apiGroups: ["stable.example.com"]
+    resources: ["crontabs"]
+
+# Profile YAML — add informer for the CRD
+config.profileYaml: |
+  ...
+  spec:
+    informers:
+      - group: stable.example.com
+        version: v1
+        resource: crontabs
+        namespace: "*"
+        events: [add, update, delete]
 ```

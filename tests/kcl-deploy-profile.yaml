@@ -2,6 +2,7 @@
 config.image: ghcr.io/stuttgart-things/homerun2-k8s-pitcher:v0.1.1
 config.namespace: homerun2-flux
 config.authToken: changeme
+config.trustBundleConfigMap: cluster-trust-bundle
 config.watchedResources:
   - pods
   - nodes

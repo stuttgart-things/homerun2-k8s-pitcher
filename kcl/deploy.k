@@ -46,7 +46,12 @@ deployment = {
                                 name: "LOG_LEVEL"
                                 value: "info"
                             }
-                        ]
+                        ] + ([
+                            {
+                                name: "SSL_CERT_DIR"
+                                value: "/etc/ssl/custom"
+                            }
+                        ] if config.trustBundleConfigMap else [])
                         resources: {
                             requests: {
                                 cpu: config.cpuRequest
@@ -75,7 +80,14 @@ deployment = {
                                 name: "tmp"
                                 mountPath: "/tmp"
                             }
-                        ]
+                        ] + ([
+                            {
+                                name: "trust-bundle"
+                                mountPath: "/etc/ssl/custom/trust-bundle.pem"
+                                subPath: "trust-bundle.pem"
+                                readOnly: True
+                            }
+                        ] if config.trustBundleConfigMap else [])
                     }
                 ]
                 affinity: {
@@ -113,7 +125,15 @@ deployment = {
                         name: "tmp"
                         emptyDir: {}
                     }
-                ]
+                ] + ([
+                    {
+                        name: "trust-bundle"
+                        configMap: {
+                            name: config.trustBundleConfigMap
+                            optional: True
+                        }
+                    }
+                ] if config.trustBundleConfigMap else [])
             }
         }
     }

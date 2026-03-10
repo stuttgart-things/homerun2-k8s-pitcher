@@ -37,6 +37,12 @@ schema K8sPitcher:
     watchedResources: [str] = ["pods", "nodes", "events", "deployments", "replicasets", "configmaps"]
     watchedApiGroups: [str] = ["", "apps"]
 
+    # TLS trust bundle (ConfigMap name containing trust-bundle.pem)
+    trustBundleConfigMap: str = ""
+
+    # Extra RBAC rules for CRDs (list of {apiGroups: [str], resources: [str]})
+    extraRbacRules: [{str:}] = []
+
     # Extra environment variables
     extraEnvVars: {str:str} = {}
 
