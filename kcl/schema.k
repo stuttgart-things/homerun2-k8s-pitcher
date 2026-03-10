@@ -10,7 +10,7 @@ schema K8sPitcher:
     namespace: str = "homerun2"
 
     # Image
-    image: str = "ghcr.io/stuttgart-things/homerun2-k8s-pitcher:latest"
+    image: str = "ghcr.io/stuttgart-things/homerun2-k8s-pitcher:v0.1.1"
     imagePullPolicy: str = "IfNotPresent"
 
     # Replicas and resources
@@ -20,18 +20,28 @@ schema K8sPitcher:
     memoryRequest: str = "256Mi"
     memoryLimit: str = "1Gi"
 
-    # Profile
+    # Profile (embedded YAML mounted as ConfigMap)
     profileYaml: str = ""
 
-    # Redis (for secrets)
+    # Pitcher mode: HTTP (post to omni-pitcher) or Redis (direct)
+    pitcherAddr: str = ""
+    pitcherInsecure: bool = True
+
+    # Redis (for direct Redis pitcher mode)
     redisPassword: str = ""
 
-    # Auth (for secrets)
+    # Auth token (used by HTTP pitcher for Bearer auth)
     authToken: str = ""
 
     # RBAC
     watchedResources: [str] = ["pods", "nodes", "events", "deployments", "replicasets", "configmaps"]
     watchedApiGroups: [str] = ["", "apps"]
+
+    # TLS trust bundle (ConfigMap name containing trust-bundle.pem)
+    trustBundleConfigMap: str = ""
+
+    # Extra RBAC rules for CRDs (list of {apiGroups: [str], resources: [str]})
+    extraRbacRules: [{str:}] = []
 
     # Extra environment variables
     extraEnvVars: {str:str} = {}

@@ -8,10 +8,14 @@ import schema
 _image = option("config.image")
 _namespace = option("config.namespace")
 _profileYaml = option("config.profileYaml")
+_pitcherAddr = option("config.pitcherAddr")
+_pitcherInsecure = option("config.pitcherInsecure")
 _redisPassword = option("config.redisPassword")
 _authToken = option("config.authToken")
 _watchedResources = option("config.watchedResources") or []
 _watchedApiGroups = option("config.watchedApiGroups") or []
+_trustBundleConfigMap = option("config.trustBundleConfigMap")
+_extraRbacRules = option("config.extraRbacRules") or []
 _extraEnvVars = option("config.extraEnvVars") or {}
 
 # Config instance with command-line overrides
@@ -22,6 +26,10 @@ config: schema.K8sPitcher = schema.K8sPitcher {
         namespace = _namespace
     if _profileYaml:
         profileYaml = _profileYaml
+    if _pitcherAddr:
+        pitcherAddr = _pitcherAddr
+    if _pitcherInsecure:
+        pitcherInsecure = _pitcherInsecure == "true" or _pitcherInsecure == "True"
     if _redisPassword:
         redisPassword = _redisPassword
     if _authToken:
@@ -30,6 +38,10 @@ config: schema.K8sPitcher = schema.K8sPitcher {
         watchedResources = _watchedResources
     if _watchedApiGroups:
         watchedApiGroups = _watchedApiGroups
+    if _trustBundleConfigMap:
+        trustBundleConfigMap = _trustBundleConfigMap
+    if _extraRbacRules:
+        extraRbacRules = _extraRbacRules
     if _extraEnvVars:
         extraEnvVars = _extraEnvVars
 }

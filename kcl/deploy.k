@@ -46,14 +46,12 @@ deployment = {
                                 name: "LOG_LEVEL"
                                 value: "info"
                             }
-                        ]
-                        envFrom: if config.extraEnvVars then [
+                        ] + ([
                             {
-                                configMapRef: {
-                                    name: "{}-env".format(config.name)
-                                }
+                                name: "SSL_CERT_DIR"
+                                value: "/etc/ssl/custom"
                             }
-                        ] else []
+                        ] if config.trustBundleConfigMap else [])
                         resources: {
                             requests: {
                                 cpu: config.cpuRequest
@@ -63,15 +61,6 @@ deployment = {
                                 cpu: config.cpuLimit
                                 memory: config.memoryLimit
                             }
-                        }
-                        livenessProbe: {
-                            exec: {
-                                command: ["cat", "/tmp/healthy"]
-                            }
-                            initialDelaySeconds: 15
-                            periodSeconds: 30
-                            timeoutSeconds: 5
-                            failureThreshold: 3
                         }
                         securityContext: {
                             readOnlyRootFilesystem: True
@@ -91,9 +80,31 @@ deployment = {
                                 name: "tmp"
                                 mountPath: "/tmp"
                             }
-                        ]
+                        ] + ([
+                            {
+                                name: "trust-bundle"
+                                mountPath: "/etc/ssl/custom/trust-bundle.pem"
+                                subPath: "trust-bundle.pem"
+                                readOnly: True
+                            }
+                        ] if config.trustBundleConfigMap else [])
                     }
                 ]
+                affinity: {
+                    podAntiAffinity: {
+                        preferredDuringSchedulingIgnoredDuringExecution: [
+                            {
+                                weight: 100
+                                podAffinityTerm: {
+                                    labelSelector: {
+                                        matchLabels: labels.selectorLabels
+                                    }
+                                    topologyKey: "kubernetes.io/hostname"
+                                }
+                            }
+                        ]
+                    }
+                }
                 securityContext: {
                     runAsNonRoot: True
                     runAsUser: 65532
@@ -114,7 +125,15 @@ deployment = {
                         name: "tmp"
                         emptyDir: {}
                     }
-                ]
+                ] + ([
+                    {
+                        name: "trust-bundle"
+                        configMap: {
+                            name: config.trustBundleConfigMap
+                            optional: True
+                        }
+                    }
+                ] if config.trustBundleConfigMap else [])
             }
         }
     }

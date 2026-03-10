@@ -25,6 +25,13 @@ clusterRole = {
             resources: ["secrets"]
             verbs: ["get"]
         }
+    ] + [
+        {
+            apiGroups: rule.apiGroups
+            resources: rule.resources
+            verbs: rule.verbs or ["get", "list", "watch"]
+        }
+        for rule in config.extraRbacRules
     ]
 }
 
