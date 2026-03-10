@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"net/http"
+
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/banner"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/collector"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/config"
@@ -17,6 +19,7 @@ import (
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/kube"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/webhook"
 )
 
 var (
@@ -127,6 +130,32 @@ func main() {
 		m := informer.New(kubeClient.DynamicClient, p, prof.Spec.Informers, kubeClient.ClusterName)
 		go m.Start(ctx)
 		slog.Info("informers started", "count", len(prof.Spec.Informers))
+	}
+
+	// Start webhook server if enabled
+	if prof.Spec.Webhook.Enabled {
+		port := prof.Spec.Webhook.Port
+		if port == "" {
+			port = "8080"
+		}
+		ws := webhook.NewServer(p, kubeClient.ClusterName, prof.Spec.Webhook.HMACKey)
+		srv := &http.Server{
+			Addr:              ":" + port,
+			Handler:           ws.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			slog.Info("webhook server started", "port", port)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("webhook server error", "error", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			_ = srv.Shutdown(shutdownCtx)
+		}()
 	}
 
 	slog.Info("homerun2-k8s-pitcher running", "cluster", kubeClient.ClusterName)
