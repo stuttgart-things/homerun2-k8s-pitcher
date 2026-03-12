@@ -138,6 +138,7 @@ func fluxEventToK8sEvent(event FluxEvent, cluster, component string) pitcher.K8s
 		Namespace: event.InvolvedObject.Namespace,
 		Name:      event.InvolvedObject.Name,
 		Summary:   summary,
+		Severity:  strings.ToUpper(event.Severity),
 		Timestamp: ts,
 		Cluster:   cluster,
 	}

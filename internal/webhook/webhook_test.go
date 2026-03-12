@@ -95,6 +95,42 @@ func TestHandleFlux(t *testing.T) {
 	if !strings.Contains(got.Summary, "kustomize-controller") {
 		t.Errorf("summary should contain controller, got %q", got.Summary)
 	}
+	if got.Severity != "INFO" {
+		t.Errorf("expected Severity 'INFO', got %q", got.Severity)
+	}
+}
+
+func TestHandleFlux_SeverityPassthrough(t *testing.T) {
+	mock := &mockPitcher{}
+	srv := NewServer(mock, "test-cluster", "")
+	handler := srv.Handler()
+
+	event := FluxEvent{
+		InvolvedObject: InvolvedObject{
+			Kind:      "Kustomization",
+			Namespace: "flux-system",
+			Name:      "my-app",
+		},
+		Severity: "error",
+		Message:  "health check failed",
+		Reason:   "HealthCheckFailed",
+	}
+
+	body, _ := json.Marshal(event)
+	req := httptest.NewRequest("POST", "/flux", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	got := mock.lastEvent()
+	if got.Severity != "ERROR" {
+		t.Errorf("expected Severity 'ERROR' (uppercased from Flux event), got %q", got.Severity)
+	}
 }
 
 func TestHandleFlux_InvalidJSON(t *testing.T) {

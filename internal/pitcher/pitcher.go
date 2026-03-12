@@ -27,6 +27,7 @@ type K8sEvent struct {
 	Name      string         `json:"name"`
 	Object    map[string]any `json:"object"`
 	Summary   string         `json:"summary,omitempty"` // human-readable text summary
+	Severity  string         `json:"severity,omitempty"` // override severity (e.g. from Flux events)
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
 }
@@ -79,10 +80,15 @@ func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
 		message = string(objectJSON)
 	}
 
+	sev := event.Severity
+	if sev == "" {
+		sev = severityFor(event.EventType)
+	}
+
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
 		Message:   message,
-		Severity:  severityFor(event.EventType),
+		Severity:  sev,
 		Author:    "k8s-pitcher",
 		Timestamp: event.Timestamp,
 		System:    p.System,
@@ -107,11 +113,11 @@ func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
 func severityFor(eventType string) string {
 	switch eventType {
 	case "delete":
-		return "warning"
+		return "WARNING"
 	case "snapshot":
-		return "info"
+		return "INFO"
 	default:
-		return "info"
+		return "INFO"
 	}
 }
 
@@ -137,7 +143,7 @@ func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
 	msg := homerun.Message{
 		Title:     "health-check",
 		Message:   "k8s-pitcher health check",
-		Severity:  "info",
+		Severity:  "INFO",
 		Author:    "k8s-pitcher",
 		Timestamp: time.Now().Format(time.RFC3339),
 		System:    p.System,
@@ -171,10 +177,15 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 		message = string(objectJSON)
 	}
 
+	sev := event.Severity
+	if sev == "" {
+		sev = severityFor(event.EventType)
+	}
+
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
 		Message:   message,
-		Severity:  severityFor(event.EventType),
+		Severity:  sev,
 		Author:    "k8s-pitcher",
 		Timestamp: event.Timestamp,
 		System:    p.System,

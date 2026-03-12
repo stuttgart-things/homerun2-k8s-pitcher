@@ -108,10 +108,10 @@ func TestSeverityFor(t *testing.T) {
 		eventType string
 		want      string
 	}{
-		{"add", "info"},
-		{"update", "info"},
-		{"delete", "warning"},
-		{"snapshot", "info"},
+		{"add", "INFO"},
+		{"update", "INFO"},
+		{"delete", "WARNING"},
+		{"snapshot", "INFO"},
 	}
 	for _, tt := range tests {
 		got := severityFor(tt.eventType)
@@ -206,7 +206,7 @@ func TestHTTPK8sPitcherPitch(t *testing.T) {
 	}
 
 	body := string(gotBody)
-	for _, want := range []string{`"author":"k8s-pitcher"`, `"system":"test-cluster"`, `"severity":"info"`} {
+	for _, want := range []string{`"author":"k8s-pitcher"`, `"system":"test-cluster"`, `"severity":"INFO"`} {
 		if !contains(body, want) {
 			t.Errorf("body missing %q\nbody: %s", want, body)
 		}
