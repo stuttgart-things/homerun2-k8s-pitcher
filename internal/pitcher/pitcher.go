@@ -26,8 +26,9 @@ type K8sEvent struct {
 	Namespace string         `json:"namespace"`
 	Name      string         `json:"name"`
 	Object    map[string]any `json:"object"`
-	Summary   string         `json:"summary,omitempty"` // human-readable text summary
+	Summary   string         `json:"summary,omitempty"`  // human-readable text summary
 	Severity  string         `json:"severity,omitempty"` // override severity (e.g. from Flux events)
+	Subsystem string         `json:"subsystem,omitempty"` // source subsystem (e.g. "flux", "kubernetes")
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
 }
@@ -85,13 +86,18 @@ func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
 		sev = severityFor(event.EventType)
 	}
 
+	subsystem := event.Subsystem
+	if subsystem == "" {
+		subsystem = "kubernetes"
+	}
+
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
 		Message:   message,
 		Severity:  sev,
-		Author:    "k8s-pitcher",
+		Author:    "k8s-pitcher-" + p.System,
 		Timestamp: event.Timestamp,
-		System:    p.System,
+		System:    subsystem,
 		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
 	}
 
@@ -112,10 +118,10 @@ func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
 
 func severityFor(eventType string) string {
 	switch eventType {
+	case "add", "update":
+		return "SUCCESS"
 	case "delete":
 		return "WARNING"
-	case "snapshot":
-		return "INFO"
 	default:
 		return "INFO"
 	}
@@ -144,9 +150,9 @@ func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
 		Title:     "health-check",
 		Message:   "k8s-pitcher health check",
 		Severity:  "INFO",
-		Author:    "k8s-pitcher",
+		Author:    "k8s-pitcher-" + p.System,
 		Timestamp: time.Now().Format(time.RFC3339),
-		System:    p.System,
+		System:    "kubernetes",
 		Tags:      "health-check",
 	}
 
@@ -182,13 +188,18 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 		sev = severityFor(event.EventType)
 	}
 
+	subsystem := event.Subsystem
+	if subsystem == "" {
+		subsystem = "kubernetes"
+	}
+
 	msg := homerun.Message{
 		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
 		Message:   message,
 		Severity:  sev,
-		Author:    "k8s-pitcher",
+		Author:    "k8s-pitcher-" + p.System,
 		Timestamp: event.Timestamp,
-		System:    p.System,
+		System:    subsystem,
 		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
 	}
 

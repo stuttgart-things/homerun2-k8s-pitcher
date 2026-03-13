@@ -138,9 +138,23 @@ func fluxEventToK8sEvent(event FluxEvent, cluster, component string) pitcher.K8s
 		Namespace: event.InvolvedObject.Namespace,
 		Name:      event.InvolvedObject.Name,
 		Summary:   summary,
-		Severity:  strings.ToUpper(event.Severity),
+		Severity:  fluxSeverityToOutcome(event.Severity),
+		Subsystem: "flux",
 		Timestamp: ts,
 		Cluster:   cluster,
+	}
+}
+
+// fluxSeverityToOutcome maps Flux notification severity to outcome-based severity.
+// Flux sends "info" for successful reconciliations and "error" for failures.
+func fluxSeverityToOutcome(fluxSeverity string) string {
+	switch strings.ToLower(fluxSeverity) {
+	case "info":
+		return "SUCCESS"
+	case "error":
+		return "ERROR"
+	default:
+		return strings.ToUpper(fluxSeverity)
 	}
 }
 

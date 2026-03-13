@@ -95,8 +95,11 @@ func TestHandleFlux(t *testing.T) {
 	if !strings.Contains(got.Summary, "kustomize-controller") {
 		t.Errorf("summary should contain controller, got %q", got.Summary)
 	}
-	if got.Severity != "INFO" {
-		t.Errorf("expected Severity 'INFO', got %q", got.Severity)
+	if got.Severity != "SUCCESS" {
+		t.Errorf("expected Severity 'SUCCESS', got %q", got.Severity)
+	}
+	if got.Subsystem != "flux" {
+		t.Errorf("expected Subsystem 'flux', got %q", got.Subsystem)
 	}
 }
 
@@ -129,7 +132,10 @@ func TestHandleFlux_SeverityPassthrough(t *testing.T) {
 
 	got := mock.lastEvent()
 	if got.Severity != "ERROR" {
-		t.Errorf("expected Severity 'ERROR' (uppercased from Flux event), got %q", got.Severity)
+		t.Errorf("expected Severity 'ERROR' (mapped from Flux 'error'), got %q", got.Severity)
+	}
+	if got.Subsystem != "flux" {
+		t.Errorf("expected Subsystem 'flux', got %q", got.Subsystem)
 	}
 }
 
