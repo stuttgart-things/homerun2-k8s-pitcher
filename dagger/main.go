@@ -37,7 +37,7 @@ func (m *Dagger) Build(
 	// +default=""
 	ldflags string,
 	// +optional
-	// +default="1.25.5"
+	// +default="1.26.3"
 	goVersion string,
 	// +optional
 	// +default="linux"
@@ -94,7 +94,7 @@ func (m *Dagger) BuildAndTestBinary(
 	ctx context.Context,
 	source *dagger.Directory,
 	// +optional
-	// +default="1.25.5"
+	// +default="1.26.3"
 	goVersion string,
 	// +optional
 	// +default="linux"
