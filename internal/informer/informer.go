@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -48,10 +47,7 @@ func (m *Manager) Start(ctx context.Context) {
 			Resource: spec.Resource,
 		}
 
-		ns := spec.Namespace
-		if ns == "*" || ns == "" {
-			ns = metav1.NamespaceAll
-		}
+		ns := profile.ResolveNamespace(spec.Namespace)
 
 		factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 			m.client,

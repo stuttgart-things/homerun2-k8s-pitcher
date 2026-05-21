@@ -1,0 +1,66 @@
+---
+# Preview-environment deploy profile for homerun2-k8s-pitcher.
+#
+# Consumed by .github/workflows/push-kustomize-pr.yaml to render the per-PR
+# kustomize OCI. Unlike tests/kcl-deploy-profile.yaml (the regular release
+# profile, cluster-scoped), this runs k8s-pitcher NAMESPACE-SCOPED: a
+# namespaced Role/RoleBinding plus informers/collectors that watch only the
+# pod's own namespace ("@self"). That keeps concurrent PR previews from
+# colliding on a single cluster-scoped ClusterRole. See #46.
+config.namespaceScoped: true
+config.image: ghcr.io/stuttgart-things/homerun2-k8s-pitcher:latest
+config.namespace: homerun2
+# Placeholder so the kustomize OCI ships a homerun2-k8s-pitcher-token Secret.
+# The argocd install chart deletes it in preview mode; ESO (preview-secrets
+# Kyverno policy) materializes the real token into the PR namespace.
+config.authToken: changeme
+config.trustBundleConfigMap: cluster-trust-bundle
+config.watchedResources:
+  - pods
+  - events
+  - deployments
+  - replicasets
+config.watchedApiGroups:
+  - ""
+  - apps
+config.profileYaml: |
+  apiVersion: homerun2.sthings.io/v1alpha1
+  kind: K8sPitcherProfile
+  metadata:
+    name: pr-preview
+  spec:
+    pitcher:
+      # In-namespace omni-pitcher co-tenant — k8s-pitcher posts the events it
+      # watches to /pitch, omni-pitcher writes them to Redis, core-catcher's
+      # dashboard renders them for the reviewer.
+      addr: http://homerun2-omni-pitcher/pitch
+      insecure: true
+    auth:
+      tokenFrom:
+        secretKeyRef:
+          # namespace omitted -> resolved to the pod's own namespace.
+          name: homerun2-k8s-pitcher-token
+          key: auth-token
+    collectors:
+      - kind: Pod
+        namespace: "@self"
+        interval: 30s
+      - kind: Event
+        namespace: "@self"
+        interval: 15s
+    informers:
+      - group: ""
+        version: v1
+        resource: pods
+        namespace: "@self"
+        events: [add, update, delete]
+      - group: apps
+        version: v1
+        resource: deployments
+        namespace: "@self"
+        events: [add, update, delete]
+      - group: apps
+        version: v1
+        resource: replicasets
+        namespace: "@self"
+        events: [add, update, delete]

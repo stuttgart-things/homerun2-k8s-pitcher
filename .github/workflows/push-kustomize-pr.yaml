@@ -1,0 +1,23 @@
+---
+name: Push PR Kustomize OCI
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  push-kustomize:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-push-kustomize.yaml@main
+    with:
+      runs-on: ubuntu-latest
+      kcl-source-dir: kcl
+      # Preview profile: namespace-scoped RBAC (Role/RoleBinding) so concurrent
+      # PR previews don't collide on a cluster-scoped ClusterRole. See #46.
+      kcl-profile-file: tests/kcl-deploy-profile-preview.yaml
+      kustomize-oci-repo: ghcr.io/stuttgart-things/homerun2-k8s-pitcher-kustomize
+      tag: pr-${{ github.event.number }}-${{ github.event.pull_request.head.sha }}
+    secrets: inherit # pragma: allowlist secret

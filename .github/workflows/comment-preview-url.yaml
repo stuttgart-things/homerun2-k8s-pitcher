@@ -1,0 +1,20 @@
+---
+name: Comment Preview URL on PR
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches:
+      - main
+
+jobs:
+  comment:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-comment-preview-url.yaml@main
+    with:
+      # k8s-pitcher has no UI of its own — it watches the PR namespace and
+      # pitches events through omni-pitcher into Redis. The review surface is
+      # the co-tenanted core-catcher dashboard, so the preview URL points
+      # straight at it. See #46.
+      hostname-prefix: cc-k8s-pr
+      hostname-domain: homerun2-dev.sthings-vsphere.labul.sva.de
+      namespace-prefix: homerun2-k8s-pitcher-pr
+    secrets: inherit # pragma: allowlist secret
