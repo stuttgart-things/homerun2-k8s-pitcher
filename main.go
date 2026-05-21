@@ -173,7 +173,8 @@ func resolveSecrets(kubeClient *kube.Client, prof *profile.K8sPitcherProfile) {
 	defer cancel()
 
 	if ref := prof.Spec.Redis.PasswordFrom; ref != nil {
-		val, err := kubeClient.ResolveSecret(ctx, ref.SecretKeyRef.Namespace, ref.SecretKeyRef.Name, ref.SecretKeyRef.Key)
+		ns := profile.ResolveSecretNamespace(ref.SecretKeyRef.Namespace)
+		val, err := kubeClient.ResolveSecret(ctx, ns, ref.SecretKeyRef.Name, ref.SecretKeyRef.Key)
 		if err != nil {
 			slog.Warn("failed to resolve redis password from secret, falling back to inline",
 				"error", err,
@@ -182,13 +183,14 @@ func resolveSecrets(kubeClient *kube.Client, prof *profile.K8sPitcherProfile) {
 			prof.Spec.Redis.Password = val
 			slog.Info("redis password resolved from secret",
 				"secret", ref.SecretKeyRef.Name,
-				"namespace", ref.SecretKeyRef.Namespace,
+				"namespace", ns,
 			)
 		}
 	}
 
 	if ref := prof.Spec.Auth.TokenFrom; ref != nil {
-		val, err := kubeClient.ResolveSecret(ctx, ref.SecretKeyRef.Namespace, ref.SecretKeyRef.Name, ref.SecretKeyRef.Key)
+		ns := profile.ResolveSecretNamespace(ref.SecretKeyRef.Namespace)
+		val, err := kubeClient.ResolveSecret(ctx, ns, ref.SecretKeyRef.Name, ref.SecretKeyRef.Key)
 		if err != nil {
 			slog.Warn("failed to resolve auth token from secret, falling back to inline",
 				"error", err,
@@ -197,7 +199,7 @@ func resolveSecrets(kubeClient *kube.Client, prof *profile.K8sPitcherProfile) {
 			prof.Spec.Auth.Token = val
 			slog.Info("auth token resolved from secret",
 				"secret", ref.SecretKeyRef.Name,
-				"namespace", ref.SecretKeyRef.Namespace,
+				"namespace", ns,
 			)
 		}
 	}

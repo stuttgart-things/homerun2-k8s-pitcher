@@ -37,6 +37,13 @@ schema K8sPitcher:
     watchedResources: [str] = ["pods", "nodes", "events", "deployments", "replicasets", "configmaps"]
     watchedApiGroups: [str] = ["", "apps"]
 
+    # RBAC scope. When false (default), emit a cluster-scoped ClusterRole +
+    # ClusterRoleBinding — k8s-pitcher watches the whole cluster. When true,
+    # emit a namespaced Role + RoleBinding instead, so k8s-pitcher watches
+    # only its own namespace. Used by per-PR preview environments, where a
+    # cluster-scoped role would collide across concurrent previews.
+    namespaceScoped: bool = False
+
     # TLS trust bundle (ConfigMap name containing trust-bundle.pem)
     trustBundleConfigMap: str = ""
 

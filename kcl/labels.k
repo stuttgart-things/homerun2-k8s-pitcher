@@ -14,6 +14,7 @@ _redisPassword = option("config.redisPassword")
 _authToken = option("config.authToken")
 _watchedResources = option("config.watchedResources") or []
 _watchedApiGroups = option("config.watchedApiGroups") or []
+_namespaceScoped = option("config.namespaceScoped")
 _trustBundleConfigMap = option("config.trustBundleConfigMap")
 _extraRbacRules = option("config.extraRbacRules") or []
 _extraEnvVars = option("config.extraEnvVars") or {}
@@ -38,6 +39,8 @@ config: schema.K8sPitcher = schema.K8sPitcher {
         watchedResources = _watchedResources
     if _watchedApiGroups:
         watchedApiGroups = _watchedApiGroups
+    if _namespaceScoped:
+        namespaceScoped = _namespaceScoped in [True, "True", "true"]
     if _trustBundleConfigMap:
         trustBundleConfigMap = _trustBundleConfigMap
     if _extraRbacRules:

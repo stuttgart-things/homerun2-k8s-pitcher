@@ -17,6 +17,8 @@ manifests = [
         serviceaccount.serviceAccount
         clusterrole.clusterRole
         clusterrole.clusterRoleBinding
+        clusterrole.role
+        clusterrole.roleBinding
         configmap.configMap
         secret.secretRedis
         secret.secretToken

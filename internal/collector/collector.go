@@ -89,10 +89,7 @@ func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
 }
 
 func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr schema.GroupVersionResource) {
-	ns := spec.Namespace
-	if ns == "*" {
-		ns = ""
-	}
+	ns := profile.ResolveNamespace(spec.Namespace)
 
 	list, err := c.client.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{})
 	if err != nil {

@@ -46,6 +46,16 @@ deployment = {
                                 name: "LOG_LEVEL"
                                 value: "info"
                             }
+                            {
+                                # Downward API — lets the profile reference the
+                                # pod's own namespace via the "@self" sentinel.
+                                name: "POD_NAMESPACE"
+                                valueFrom: {
+                                    fieldRef: {
+                                        fieldPath: "metadata.namespace"
+                                    }
+                                }
+                            }
                         ] + ([
                             {
                                 name: "SSL_CERT_DIR"
