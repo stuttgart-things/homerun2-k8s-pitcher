@@ -7,6 +7,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/stuttgart-things/homerun-library/v3 v3.2.0
+	github.com/stuttgart-things/homerun-library/v4 v4.0.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
