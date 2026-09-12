@@ -12,6 +12,8 @@ homerun2-k8s-pitcher --profile profiles/dev.yaml --kubeconfig ~/.kube/config
 PITCHER_MODE=file homerun2-k8s-pitcher --profile profiles/dev.yaml --kubeconfig ~/.kube/config
 ```
 
+At startup the pitcher waits for its target: omni-pitcher's `/ready` in HTTP mode (`PITCHER_STARTUP_TIMEOUT`), a Redis `PING` in Redis mode (`REDIS_STARTUP_TIMEOUT`). Both default to `120s`; SIGINT/SIGTERM during the wait exits 0.
+
 ## Architecture
 
 ```

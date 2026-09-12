@@ -20,6 +20,17 @@ Flux    → webhook (notification controller events)  ─┘
 | **Redis** | Enqueue events directly to Redis Streams | `spec.redis.*` |
 | **File** | Write JSON lines to a file (dev/testing) | `PITCHER_MODE=file` |
 
+### Startup
+
+Before it starts watching, the pitcher waits for its target with bounded backoff, so a Redis or omni-pitcher that is still starting does not crashloop the pod:
+
+| Mode | Waits for | Budget (Go duration) |
+|------|-----------|----------------------|
+| **HTTP** | `GET /ready` on omni-pitcher, derived from `spec.pitcher.addr` (falls back to `/health` on versions without `/ready`). No message is pitched. | `PITCHER_STARTUP_TIMEOUT`, default `120s` |
+| **Redis** | a Redis `PING` | `REDIS_STARTUP_TIMEOUT`, default `120s` |
+
+An invalid or non-positive value fails startup. SIGINT/SIGTERM during the wait exits 0; a target that never answers within the budget exits 1.
+
 ## Usage
 
 ```bash

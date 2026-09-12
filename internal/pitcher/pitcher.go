@@ -9,7 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,12 +130,20 @@ func severityFor(eventType string) string {
 	}
 }
 
+// requestTimeout bounds every request to omni-pitcher. The default client has
+// none, so an omni-pitcher that accepted the connection and never answered
+// blocked the startup check forever (#65).
+const requestTimeout = 10 * time.Second
+
 // HTTPK8sPitcher sends K8s events to an omni-pitcher HTTP endpoint.
 type HTTPK8sPitcher struct {
 	Addr     string // pitcher HTTP(S) URL
 	Token    string // auth token sent via X-Auth-Token header
 	Insecure bool   // skip TLS verification
 	System   string // cluster identity
+
+	clientOnce sync.Once
+	client     *http.Client
 }
 
 // NewHTTPK8sPitcher creates a pitcher that POSTs events to the omni-pitcher endpoint.
@@ -145,32 +156,74 @@ func NewHTTPK8sPitcher(addr, token string, insecure bool, clusterName string) *H
 	}
 }
 
-func (p *HTTPK8sPitcher) HealthCheck(_ context.Context) error {
-	msg := homerun.Message{
-		Title:     "health-check",
-		Message:   "k8s-pitcher health check",
-		Severity:  "INFO",
-		Author:    "k8s-pitcher-" + p.System,
-		Timestamp: time.Now().Format(time.RFC3339),
-		System:    "kubernetes",
-		Tags:      "health-check",
+// HealthCheck asks omni-pitcher whether it can take events: GET /ready, which
+// fails while omni-pitcher cannot reach Redis. Omni-pitcher versions without
+// /ready answer 404 and fall back to /health, which only says the process is
+// up. This used to POST a real "health-check" message, so every pod start wrote
+// an event that consumers displayed (#65).
+func (p *HTTPK8sPitcher) HealthCheck(ctx context.Context) error {
+	status, err := p.get(ctx, "ready")
+	if err == nil && status == http.StatusNotFound {
+		status, err = p.get(ctx, "health")
 	}
-
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("marshaling health check body: %w", err)
-	}
-
-	resp, err := p.post(body)
 	if err != nil {
 		return fmt.Errorf("pitcher health check failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("pitcher health check returned status %d", resp.StatusCode)
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("pitcher health check returned status %d", status)
 	}
 	return nil
+}
+
+// get requests an endpoint next to the pitch URL and returns its status code.
+func (p *HTTPK8sPitcher) get(ctx context.Context, endpoint string) (int, error) {
+	u, err := p.probeURL(endpoint)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := p.httpClient().Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("GET %s: %w", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
+// probeURL derives an omni-pitcher endpoint from the pitch URL: a trailing
+// /pitch segment is replaced, anything else is kept as the base, so
+// http://host/pitch and http://host both give http://host/<endpoint>.
+func (p *HTTPK8sPitcher) probeURL(endpoint string) (string, error) {
+	u, err := url.Parse(p.Addr)
+	if err != nil {
+		return "", fmt.Errorf("parsing pitcher addr %q: %w", p.Addr, err)
+	}
+	base := strings.TrimSuffix(u.Path, "/")
+	if path.Base(base) == "pitch" {
+		base = path.Dir(base)
+	}
+	u.Path = strings.TrimSuffix(base, "/") + "/" + endpoint
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+// httpClient is shared by every request, so connections are reused and each
+// request is bounded by requestTimeout.
+func (p *HTTPK8sPitcher) httpClient() *http.Client {
+	p.clientOnce.Do(func() {
+		p.client = &http.Client{
+			Timeout: requestTimeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: p.Insecure}, //nolint:gosec // caller-controlled
+			},
+		}
+	})
+	return p.client
 }
 
 func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
@@ -208,7 +261,7 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 		return fmt.Errorf("marshaling message body: %w", err)
 	}
 
-	resp, err := p.post(body)
+	resp, err := p.post(context.Background(), body)
 	if err != nil {
 		return fmt.Errorf("sending to pitcher: %w", err)
 	}
@@ -228,8 +281,8 @@ func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
 }
 
 // post sends a JSON body to the pitcher endpoint with Bearer token auth.
-func (p *HTTPK8sPitcher) post(body []byte) (*http.Response, error) {
-	req, err := http.NewRequest("POST", p.Addr, bytes.NewReader(body))
+func (p *HTTPK8sPitcher) post(ctx context.Context, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.Addr, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -237,13 +290,7 @@ func (p *HTTPK8sPitcher) post(body []byte) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.Token)
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: p.Insecure}, //nolint:gosec // caller-controlled
-		},
-	}
-
-	resp, err := client.Do(req)
+	resp, err := p.httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
 	}

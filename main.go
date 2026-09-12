@@ -20,6 +20,8 @@ import (
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/webhook"
+
+	homerun "github.com/stuttgart-things/homerun-library/v4"
 )
 
 var (
@@ -66,7 +68,13 @@ func main() {
 	// Resolve secrets if *From fields are set
 	resolveSecrets(kubeClient, prof)
 
-	// Initialize pitcher
+	// Canceled on SIGINT/SIGTERM: ends a startup wait for the pitch target, then
+	// the collectors, informers and webhook server.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+
+	// Initialize pitcher. Both network modes wait for their target with bounded
+	// backoff: a single 5s check used to exit and crashloop the pod while Redis
+	// or omni-pitcher was still starting (#65).
 	var p pitcher.K8sPitcher
 	if os.Getenv("PITCHER_MODE") == "file" {
 		filePath := os.Getenv("PITCHER_FILE")
@@ -82,13 +90,15 @@ func main() {
 			prof.Spec.Pitcher.Insecure,
 			kubeClient.ClusterName,
 		)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := hp.HealthCheck(ctx); err != nil {
-			slog.Error("pitcher health check failed", "error", err)
-			cancel()
+		timeout, err := config.LoadStartupTimeout(config.PitcherStartupTimeoutEnv)
+		if err != nil {
+			slog.Error("invalid configuration", "error", err)
 			os.Exit(1)
 		}
-		cancel()
+		waitCtx, cancelWait := context.WithTimeout(ctx, timeout)
+		err = homerun.WaitForReady(waitCtx, hp.HealthCheck, 5*time.Second)
+		cancelWait()
+		exitIfNotReady(ctx, "pitcher", err, "addr", prof.Spec.Pitcher.Addr, "startup_timeout", timeout.String())
 		p = hp
 		slog.Info("pitcher mode: http",
 			"addr", prof.Spec.Pitcher.Addr,
@@ -96,13 +106,13 @@ func main() {
 		)
 	} else {
 		rp := pitcher.NewRedisK8sPitcher(prof.Spec.Redis, kubeClient.ClusterName)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := rp.HealthCheck(ctx); err != nil {
-			slog.Error("redis health check failed", "error", err)
-			cancel()
+		timeout, err := homerun.LoadRedisStartupTimeout()
+		if err != nil {
+			slog.Error("invalid configuration", "error", err)
 			os.Exit(1)
 		}
-		cancel()
+		err = homerun.WaitForRedisContext(ctx, rp.RedisConfig, timeout)
+		exitIfNotReady(ctx, "redis", err, "addr", prof.Spec.Redis.Addr, "port", prof.Spec.Redis.Port, "startup_timeout", timeout.String())
 		p = rp
 		slog.Info("pitcher mode: redis",
 			"addr", prof.Spec.Redis.Addr,
@@ -110,13 +120,6 @@ func main() {
 			"stream", prof.Spec.Redis.Stream,
 		)
 	}
-
-	// Set up context with signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start collectors
 	if len(prof.Spec.Collectors) > 0 {
@@ -159,13 +162,27 @@ func main() {
 	}
 
 	slog.Info("homerun2-k8s-pitcher running", "cluster", kubeClient.ClusterName)
-	<-quit
+	<-ctx.Done()
 
 	slog.Info("shutting down")
-	cancel()
+	stop()
 	// Give goroutines time to finish
 	time.Sleep(500 * time.Millisecond)
 	slog.Info("homerun2-k8s-pitcher exited gracefully")
+}
+
+// exitIfNotReady ends startup when waiting for the pitch target did not
+// succeed: exit 0 if a shutdown signal ended the wait, exit 1 if the target
+// never answered within its budget.
+func exitIfNotReady(ctx context.Context, target string, err error, attrs ...any) {
+	if ctx.Err() != nil {
+		slog.Info("shutdown requested while waiting for " + target)
+		os.Exit(0)
+	}
+	if err != nil {
+		slog.Error(target+" not reachable", append([]any{"error", err}, attrs...)...)
+		os.Exit(1)
+	}
 }
 
 func resolveSecrets(kubeClient *kube.Client, prof *profile.K8sPitcherProfile) {
