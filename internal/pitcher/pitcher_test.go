@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 )
@@ -236,33 +238,104 @@ func TestHTTPK8sPitcherPitchServerError(t *testing.T) {
 }
 
 func TestHTTPK8sPitcherHealthCheck(t *testing.T) {
-	var gotToken string
+	var gets, posts atomic.Int32
+	var gotPath atomic.Value
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotToken = r.Header.Get("Authorization")
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+		} else {
+			gets.Add(1)
+			gotPath.Store(r.URL.Path)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	p := NewHTTPK8sPitcher(server.URL, "hc-token", false, "test-cluster")
+	p := NewHTTPK8sPitcher(server.URL+"/pitch", "hc-token", false, "test-cluster")
 
 	if err := p.HealthCheck(context.Background()); err != nil {
 		t.Fatalf("HealthCheck() error: %v", err)
 	}
-	if gotToken != "Bearer hc-token" {
-		t.Errorf("Authorization = %q, want %q", gotToken, "Bearer hc-token")
+	if got := gotPath.Load(); got != "/ready" {
+		t.Errorf("health check path = %v, want /ready", got)
+	}
+	if posts.Load() != 0 {
+		t.Errorf("health check sent %d POST(s): it must not pitch a message", posts.Load())
+	}
+	if gets.Load() != 1 {
+		t.Errorf("health check sent %d GET(s), want 1", gets.Load())
 	}
 }
 
-func TestHTTPK8sPitcherHealthCheckFail(t *testing.T) {
+func TestHTTPK8sPitcherHealthCheckNotReady(t *testing.T) {
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusInternalServerError, http.StatusUnauthorized} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		p := NewHTTPK8sPitcher(server.URL+"/pitch", "token", false, "test")
+		if err := p.HealthCheck(context.Background()); err == nil {
+			t.Errorf("HealthCheck() with /ready %d: expected error, got nil", status)
+		}
+		server.Close()
+	}
+}
+
+func TestHTTPK8sPitcherHealthCheckFallsBackToHealth(t *testing.T) {
+	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/ready" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	p := NewHTTPK8sPitcher(server.URL, "bad-token", false, "test")
+	p := NewHTTPK8sPitcher(server.URL+"/pitch", "token", false, "test")
+	if err := p.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("HealthCheck() error: %v", err)
+	}
+	if strings.Join(paths, ",") != "/ready,/health" {
+		t.Errorf("paths = %v, want [/ready /health]", paths)
+	}
+}
 
-	err := p.HealthCheck(context.Background())
-	if err == nil {
-		t.Fatal("HealthCheck() expected error for 401 response, got nil")
+func TestHTTPK8sPitcherHealthCheckHangingServerTimesOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // accept the request, never answer
+	}))
+	defer server.Close()
+
+	p := NewHTTPK8sPitcher(server.URL+"/pitch", "token", false, "test")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	if err := p.HealthCheck(ctx); err == nil {
+		t.Fatal("HealthCheck() against a server that never answers: expected error, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("HealthCheck() took %v, want it bounded by the 300ms context", elapsed)
+	}
+}
+
+func TestHTTPK8sPitcherProbeURL(t *testing.T) {
+	cases := map[string]string{
+		"http://omni.homerun2.svc.cluster.local/pitch": "http://omni.homerun2.svc.cluster.local/ready",
+		"http://omni:8080/pitch/":                      "http://omni:8080/ready",
+		"https://omni.example.com":                     "https://omni.example.com/ready",
+		"https://omni.example.com/":                    "https://omni.example.com/ready",
+		"http://gw.example.com/omni/pitch?x=1":         "http://gw.example.com/omni/ready",
+	}
+	for addr, want := range cases {
+		p := NewHTTPK8sPitcher(addr, "", false, "test")
+		got, err := p.probeURL("ready")
+		if err != nil {
+			t.Fatalf("probeURL(%q) error: %v", addr, err)
+		}
+		if got != want {
+			t.Errorf("probeURL(%q) = %q, want %q", addr, got, want)
+		}
 	}
 }
