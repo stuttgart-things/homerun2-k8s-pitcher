@@ -2,12 +2,30 @@
 name: Comment Preview URL on PR
 on:
   pull_request:
-    types: [opened, reopened]
+    # Note: deliberately no `opened`. When a PR is created with `preview`
+    # already attached, GitHub fires both `opened` and `labeled` events
+    # back-to-back, and the comment template can't dedupe across two
+    # near-simultaneous runs — you end up with two URL comments. The
+    # `labeled` event handles the at-creation case just fine on its own.
+    types: [reopened, labeled]
     branches:
       - main
 
 jobs:
   comment:
+    # `labeled`: post only when the just-added label is `preview` (the
+    # label the AppSet keys on). `reopened`: post only if the PR still
+    # has the `preview` label attached — `reopened` doesn't fire a
+    # `labeled` event, so we have to check the current label set.
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+      (github.event.action == 'reopened' && contains(github.event.pull_request.labels.*.name, 'preview'))
+    # Declared here as well as in the called workflow: a reusable workflow
+    # can narrow the caller's token but never widen it, so leaving this to
+    # the repository default is how a comment quietly turns into a 403.
+    permissions:
+      contents: read
+      pull-requests: write
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-comment-preview-url.yaml@main
     with:
       # k8s-pitcher has no UI of its own — it watches the PR namespace and
@@ -16,5 +34,8 @@ jobs:
       # straight at it. See #46.
       hostname-prefix: cc-k8s-pr
       hostname-domain: homerun2-dev.sthings-vsphere.labul.sva.de
+      # /healthz, not the template's /health default: this component serves
+      # /healthz and nothing at /health, so the default links to a 404.
+      health-path: /healthz
       namespace-prefix: homerun2-k8s-pitcher-pr
     secrets: inherit # pragma: allowlist secret
