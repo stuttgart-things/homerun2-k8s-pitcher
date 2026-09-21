@@ -17,9 +17,15 @@ jobs:
     # label the AppSet keys on). `reopened`: post only if the PR still
     # has the `preview` label attached — `reopened` doesn't fire a
     # `labeled` event, so we have to check the current label set.
+    #
+    # And only when the org variable HOMERUN2_PREVIEW_DOMAIN names the cluster
+    # previews run on. Unset, the comment would carry an address with no
+    # domain, and a dead link is worse than no link.
     if: |
-      (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
-      (github.event.action == 'reopened' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      vars.HOMERUN2_PREVIEW_DOMAIN != '' && (
+        (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+        (github.event.action == 'reopened' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      )
     # Declared here as well as in the called workflow: a reusable workflow
     # can narrow the caller's token but never widen it, so leaving this to
     # the repository default is how a comment quietly turns into a 403.
@@ -33,7 +39,12 @@ jobs:
       # the co-tenanted core-catcher dashboard, so the preview URL points
       # straight at it. See #46.
       hostname-prefix: cc-k8s-pr
-      hostname-domain: homerun2-dev.sthings-vsphere.labul.sva.de
+      # The preview cluster is not named here: HOMERUN2_PREVIEW_DOMAIN is an
+      # org variable, so moving previews to another cluster is one value in
+      # the org settings, not a commit in every component repository. The
+      # ApplicationSets take the same domain from the cluster's clusterbook
+      # fqdn annotation (stuttgart-things/argocd platforms/homerun2-pr-preview).
+      hostname-domain: ${{ vars.HOMERUN2_PREVIEW_DOMAIN }}
       # /healthz, not the template's /health default: this component serves
       # /healthz and nothing at /health, so the default links to a 404.
       health-path: /healthz
