@@ -68,6 +68,13 @@ func main() {
 	// Resolve secrets if *From fields are set
 	resolveSecrets(kubeClient, prof)
 
+	// spec.cluster names the cluster where the kubeconfig context cannot
+	// (in-cluster); the system defaults to k8s-<cluster>.
+	if prof.Spec.Cluster != "" {
+		kubeClient.ClusterName = prof.Spec.Cluster
+	}
+	system := prof.SystemFor(kubeClient.ClusterName)
+
 	// Canceled on SIGINT/SIGTERM: ends a startup wait for the pitch target, then
 	// the collectors, informers and webhook server.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -90,6 +97,7 @@ func main() {
 			prof.Spec.Pitcher.Insecure,
 			kubeClient.ClusterName,
 		)
+		hp.SystemName = system
 		timeout, err := config.LoadStartupTimeout(config.PitcherStartupTimeoutEnv)
 		if err != nil {
 			slog.Error("invalid configuration", "error", err)
@@ -106,6 +114,7 @@ func main() {
 		)
 	} else {
 		rp := pitcher.NewRedisK8sPitcher(prof.Spec.Redis, kubeClient.ClusterName)
+		rp.SystemName = system
 		timeout, err := homerun.LoadRedisStartupTimeout()
 		if err != nil {
 			slog.Error("invalid configuration", "error", err)
@@ -161,7 +170,7 @@ func main() {
 		}()
 	}
 
-	slog.Info("homerun2-k8s-pitcher running", "cluster", kubeClient.ClusterName)
+	slog.Info("homerun2-k8s-pitcher running", "cluster", kubeClient.ClusterName, "system", system)
 	<-ctx.Done()
 
 	slog.Info("shutting down")

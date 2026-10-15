@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -53,6 +54,16 @@ func validate(p *K8sPitcherProfile) error {
 		if len(inf.Events) == 0 {
 			return fmt.Errorf("spec.informers[%d].events must not be empty", i)
 		}
+		switch inf.Updates {
+		case "", UpdatesConditions, UpdatesGeneration, UpdatesAll:
+		default:
+			return fmt.Errorf("spec.informers[%d].updates must be conditions, generation or all (got %q)", i, inf.Updates)
+		}
+		switch strings.ToLower(inf.DeleteSeverity) {
+		case "", "info", "success", "warning", "error", "critical":
+		default:
+			return fmt.Errorf("spec.informers[%d].deleteSeverity must be info, success, warning, error or critical (got %q)", i, inf.DeleteSeverity)
+		}
 	}
 	for i, col := range p.Spec.Collectors {
 		if col.Kind == "" {
@@ -73,5 +84,16 @@ func applyDefaults(p *K8sPitcherProfile) {
 		if p.Spec.Informers[i].Namespace == "" {
 			p.Spec.Informers[i].Namespace = "*"
 		}
+		if p.Spec.Informers[i].Updates == "" {
+			p.Spec.Informers[i].Updates = UpdatesConditions
+		}
 	}
+}
+
+// SystemFor returns spec.system, or k8s-<cluster>.
+func (p *K8sPitcherProfile) SystemFor(cluster string) string {
+	if p.Spec.System != "" {
+		return p.Spec.System
+	}
+	return "k8s-" + cluster
 }

@@ -1,0 +1,61 @@
+# Inventory events of a cluster with Crossplane claims (#76): new and
+# deleted VMs and clusters, Ready/Synced flips, failing Flux objects.
+# Existing objects are not re-pitched on restart (pitchInitialList: false),
+# status-only updates are dropped (updates: conditions).
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: crossplane-inventory
+spec:
+  cluster: platform-sthings      # in-cluster there is no kubeconfig context
+  # system: k8s-platform-sthings  # default: k8s-<cluster>
+  pitcher:
+    addr: https://omni.platform.sthings-vsphere.labul.sva.de/pitch
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: omni-pitcher-token
+        namespace: homerun2
+        key: auth-token
+  informers:
+    # VMs (claims of machinery/vsphere-vm, machinery/vspherevm)
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: vspherevms
+      events: [add, update, delete]
+      deleteSeverity: info       # a deleted claim is usually intended
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: nativevspherevms
+      events: [add, update, delete]
+      deleteSeverity: info
+    # Clusters
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: rancherclusters
+      events: [add, update, delete]
+      deleteSeverity: info
+    - group: config.stuttgart-things.com
+      version: v1alpha1
+      resource: clusterstacks
+      events: [add, update, delete]
+      deleteSeverity: info
+    # Runs created by ScheduledRuns: only Ready flips, no add per night.
+    # Failed or missing nightly runs as findings: schedule-pitcher scheduled-run.
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: ansibleruns
+      events: [update]
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: tofuruns
+      events: [update]
+    # Flux: Ready flips only (or use the Flux webhook)
+    - group: kustomize.toolkit.fluxcd.io
+      version: v1
+      resource: kustomizations
+      events: [update]
+    - group: helm.toolkit.fluxcd.io
+      version: v2
+      resource: helmreleases
+      events: [update]

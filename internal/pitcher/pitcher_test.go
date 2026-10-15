@@ -339,3 +339,28 @@ func TestHTTPK8sPitcherProbeURL(t *testing.T) {
 		}
 	}
 }
+
+func TestToMessage(t *testing.T) {
+	ev := K8sEvent{Kind: "VsphereVM", Name: "vm1", Namespace: "default", EventType: "update", Summary: "s", Timestamp: "t"}
+
+	msg, err := toMessage(ev, "labda", "k8s-labda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.System != "k8s-labda" || msg.Author != "k8s-pitcher-labda" || msg.Title != "VsphereVM/vm1 update" || msg.Severity != "SUCCESS" {
+		t.Errorf("unexpected message %+v", msg)
+	}
+
+	ev.Title = "VsphereVM/vm1 Ready=False (ReconcileError)"
+	ev.Severity = "error"
+	ev.Subsystem = "flux"
+	msg, _ = toMessage(ev, "labda", "k8s-labda")
+	if msg.System != "flux" || msg.Title != ev.Title || msg.Severity != "error" {
+		t.Errorf("event fields must win: %+v", msg)
+	}
+
+	ev.Subsystem = ""
+	if msg, _ = toMessage(ev, "labda", ""); msg.System != "kubernetes" {
+		t.Errorf("system fallback = %q", msg.System)
+	}
+}

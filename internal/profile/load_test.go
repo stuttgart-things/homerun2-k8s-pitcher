@@ -319,3 +319,40 @@ func writeTempFile(t *testing.T, content string) string {
 	}
 	return path
 }
+
+func TestLoadInventoryProfile(t *testing.T) {
+	p, err := Load("../../profiles/crossplane-inventory.yaml")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if p.Spec.Cluster != "platform-sthings" || p.SystemFor(p.Spec.Cluster) != "k8s-platform-sthings" {
+		t.Errorf("cluster/system = %q/%q", p.Spec.Cluster, p.SystemFor(p.Spec.Cluster))
+	}
+	vm := p.Spec.Informers[0]
+	if vm.Updates != UpdatesConditions || vm.PitchInitialList || vm.DeleteSeverity != "info" || vm.IncludeObject {
+		t.Errorf("vm informer = %+v", vm)
+	}
+	p.Spec.System = "inventory"
+	if p.SystemFor("x") != "inventory" {
+		t.Error("spec.system must win")
+	}
+}
+
+func TestLoadInformerOptionErrors(t *testing.T) {
+	for _, field := range []string{"updates: sometimes", "deleteSeverity: loud"} {
+		path := writeTempFile(t, `
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - version: v1
+      resource: pods
+      events: [update]
+      `+field+`
+`)
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s: expected a validation error", field)
+		}
+	}
+}

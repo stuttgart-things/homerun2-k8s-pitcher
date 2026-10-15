@@ -51,6 +51,9 @@ kind: K8sPitcherProfile
 metadata:
   name: my-cluster
 spec:
+  cluster: my-cluster   # default: kubeconfig context, in-cluster "in-cluster"
+  system: k8s-my-cluster  # default: k8s-<cluster>; Flux webhook events keep "flux"
+
   # HTTP pitcher mode (send to omni-pitcher)
   pitcher:
     addr: https://pitcher.example.com/pitch
@@ -103,7 +106,23 @@ spec:
       events: [add, update, delete]
 ```
 
-See `profiles/` for complete examples.
+See `profiles/` for complete examples, `profiles/crossplane-inventory.yaml` for
+VM and cluster claims.
+
+### Informer options
+
+| Field | Default | |
+|---|---|---|
+| `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
+| `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
+| `deleteSeverity` | `WARNING` | e.g. `info` for claims that are deleted on purpose |
+| `includeObject` | `false` | Append the whole object as JSON to the summary. Off, the message body is the summary only. |
+
+A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
+`False` is `error`, `Synced` to `False` or either to `Unknown` `warning`, back
+to `True` `success`; a generation change is `info`. A condition that shows up
+for the first time is not a flip. Messages carry `system: k8s-<cluster>`, so
+scout and the AI pitcher can tell clusters apart.
 
 ## Flux Notification Webhook
 

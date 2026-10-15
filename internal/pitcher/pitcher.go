@@ -29,8 +29,9 @@ type K8sEvent struct {
 	Namespace string         `json:"namespace"`
 	Name      string         `json:"name"`
 	Object    map[string]any `json:"object"`
-	Summary   string         `json:"summary,omitempty"`  // human-readable text summary
-	Severity  string         `json:"severity,omitempty"` // override severity (e.g. from Flux events)
+	Summary   string         `json:"summary,omitempty"`   // human-readable text summary
+	Title     string         `json:"title,omitempty"`     // overrides "<kind>/<name> <eventType>"
+	Severity  string         `json:"severity,omitempty"`  // override severity (e.g. from Flux events)
 	Subsystem string         `json:"subsystem,omitempty"` // source subsystem (e.g. "flux", "kubernetes")
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
@@ -45,7 +46,10 @@ type K8sPitcher interface {
 // RedisK8sPitcher implements K8sPitcher using Redis Streams.
 type RedisK8sPitcher struct {
 	RedisConfig homerun.RedisConfig
-	System      string // cluster identity used as system name
+	System      string // cluster identity, used in the author
+	// SystemName is the message system (profile spec.system); "kubernetes"
+	// if empty.
+	SystemName string
 }
 
 // NewRedisK8sPitcher creates a pitcher from profile Redis config.
@@ -75,33 +79,9 @@ func (p *RedisK8sPitcher) HealthCheck(ctx context.Context) error {
 }
 
 func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
-	message := event.Summary
-	if message == "" {
-		objectJSON, err := json.Marshal(event.Object)
-		if err != nil {
-			return fmt.Errorf("marshaling object: %w", err)
-		}
-		message = string(objectJSON)
-	}
-
-	sev := event.Severity
-	if sev == "" {
-		sev = severityFor(event.EventType)
-	}
-
-	subsystem := event.Subsystem
-	if subsystem == "" {
-		subsystem = "kubernetes"
-	}
-
-	msg := homerun.Message{
-		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
-		Message:   message,
-		Severity:  sev,
-		Author:    "k8s-pitcher-" + p.System,
-		Timestamp: event.Timestamp,
-		System:    subsystem,
-		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
+	msg, err := toMessage(event, p.System, p.SystemName)
+	if err != nil {
+		return err
 	}
 
 	objectID, streamID, err := homerun.EnqueueMessageInRedisStreams(msg, p.RedisConfig)
@@ -117,6 +97,48 @@ func (p *RedisK8sPitcher) Pitch(event K8sEvent) error {
 		"stream", streamID,
 	)
 	return nil
+}
+
+// toMessage builds the homerun message of an event. cluster goes into the
+// author; system is the message system unless the event sets its own (flux),
+// "kubernetes" if empty.
+func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) {
+	message := event.Summary
+	if message == "" {
+		objectJSON, err := json.Marshal(event.Object)
+		if err != nil {
+			return homerun.Message{}, fmt.Errorf("marshaling object: %w", err)
+		}
+		message = string(objectJSON)
+	}
+
+	sev := event.Severity
+	if sev == "" {
+		sev = severityFor(event.EventType)
+	}
+
+	sys := event.Subsystem
+	if sys == "" {
+		sys = system
+	}
+	if sys == "" {
+		sys = "kubernetes"
+	}
+
+	title := event.Title
+	if title == "" {
+		title = fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType)
+	}
+
+	return homerun.Message{
+		Title:     title,
+		Message:   message,
+		Severity:  sev,
+		Author:    "k8s-pitcher-" + cluster,
+		Timestamp: event.Timestamp,
+		System:    sys,
+		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
+	}, nil
 }
 
 func severityFor(eventType string) string {
@@ -140,7 +162,10 @@ type HTTPK8sPitcher struct {
 	Addr     string // pitcher HTTP(S) URL
 	Token    string // auth token sent via X-Auth-Token header
 	Insecure bool   // skip TLS verification
-	System   string // cluster identity
+	System   string // cluster identity, used in the author
+	// SystemName is the message system (profile spec.system); "kubernetes"
+	// if empty.
+	SystemName string
 
 	clientOnce sync.Once
 	client     *http.Client
@@ -227,33 +252,9 @@ func (p *HTTPK8sPitcher) httpClient() *http.Client {
 }
 
 func (p *HTTPK8sPitcher) Pitch(event K8sEvent) error {
-	message := event.Summary
-	if message == "" {
-		objectJSON, err := json.Marshal(event.Object)
-		if err != nil {
-			return fmt.Errorf("marshaling object: %w", err)
-		}
-		message = string(objectJSON)
-	}
-
-	sev := event.Severity
-	if sev == "" {
-		sev = severityFor(event.EventType)
-	}
-
-	subsystem := event.Subsystem
-	if subsystem == "" {
-		subsystem = "kubernetes"
-	}
-
-	msg := homerun.Message{
-		Title:     fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType),
-		Message:   message,
-		Severity:  sev,
-		Author:    "k8s-pitcher-" + p.System,
-		Timestamp: event.Timestamp,
-		System:    subsystem,
-		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
+	msg, err := toMessage(event, p.System, p.SystemName)
+	if err != nil {
+		return err
 	}
 
 	body, err := json.Marshal(msg)
