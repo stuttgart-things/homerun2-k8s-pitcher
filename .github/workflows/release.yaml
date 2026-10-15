@@ -20,4 +20,5 @@ jobs:
       kcl-source-dir: kcl
       kcl-profile-file: tests/kcl-deploy-profile.yaml
       kustomize-oci-repo: ghcr.io/stuttgart-things/homerun2-k8s-pitcher-kustomize
+      kustomize-image-key: config.image
     secrets: inherit # pragma: allowlist secret
