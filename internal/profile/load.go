@@ -41,8 +41,10 @@ func validate(p *K8sPitcherProfile) error {
 	if hasRedis && p.Spec.Redis.Stream == "" {
 		return fmt.Errorf("spec.redis.stream is required")
 	}
-	if len(p.Spec.Collectors) == 0 && len(p.Spec.Informers) == 0 {
-		return fmt.Errorf("at least one collector or informer must be defined")
+	// The webhook server runs on its own, so a profile that only receives
+	// Flux events is valid (#80).
+	if len(p.Spec.Collectors) == 0 && len(p.Spec.Informers) == 0 && !p.Spec.Webhook.Enabled {
+		return fmt.Errorf("at least one collector, informer or an enabled webhook must be defined")
 	}
 	for i, inf := range p.Spec.Informers {
 		if inf.Version == "" {
