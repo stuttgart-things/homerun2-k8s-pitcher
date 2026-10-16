@@ -139,6 +139,9 @@ k8s-pitcher can receive events from the [Flux notification controller](https://f
        hmacKey: "optional-secret"  # for generic-hmac provider type
    ```
 
+   The webhook can be the profile's only source: collectors and informers
+   are optional when `webhook.enabled` is true.
+
 2. Create a Flux `Provider` pointing to k8s-pitcher:
    ```yaml
    apiVersion: notification.toolkit.fluxcd.io/v1beta3

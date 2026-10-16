@@ -210,6 +210,17 @@ spec:
 `,
 		},
 		{
+			name: "no collectors or informers, webhook disabled",
+			yaml: `
+spec:
+  pitcher:
+    addr: https://pitcher.example.com
+  webhook:
+    enabled: false
+    port: "8080"
+`,
+		},
+		{
 			name: "informer missing version",
 			yaml: `
 spec:
@@ -307,6 +318,34 @@ spec:
 	}
 	if p.Spec.Redis.Addr != "" {
 		t.Errorf("redis.addr should be empty, got %q", p.Spec.Redis.Addr)
+	}
+}
+
+func TestLoadWebhookOnlyProfile(t *testing.T) {
+	yaml := `
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: flux-webhook
+spec:
+  cluster: platform-sthings
+  pitcher:
+    addr: http://omni.example.svc.cluster.local/pitch
+  webhook:
+    enabled: true
+    port: "8080"
+`
+	path := writeTempFile(t, yaml)
+	p, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !p.Spec.Webhook.Enabled {
+		t.Error("webhook.enabled = false, want true")
+	}
+	if len(p.Spec.Collectors) != 0 || len(p.Spec.Informers) != 0 {
+		t.Errorf("want no collectors or informers, got %d and %d", len(p.Spec.Collectors), len(p.Spec.Informers))
 	}
 }
 
