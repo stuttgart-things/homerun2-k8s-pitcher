@@ -1,0 +1,40 @@
+---
+# Backstage TechDocs built in CI (call-techdocs.yaml, the techdocs Dagger
+# module). Pull requests only build, so a broken mkdocs.yml or nav fails the PR.
+#
+# On main the site is also uploaded to the TechDocs bucket on the
+# sthings-platform MinIO, for a Backstage with techdocs.builder: external
+# (stuttgart-things/flux apps/backstage README, "Optional: TechDocs from CI").
+# Publishing is off until the repo/org variable TECHDOCS_PUBLISH is "true", so
+# this workflow can land before the bucket and its credentials exist.
+name: TechDocs
+
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - catalog-info.yaml
+      - .github/workflows/techdocs.yaml
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - catalog-info.yaml
+      - .github/workflows/techdocs.yaml
+  workflow_dispatch:
+
+jobs:
+  techdocs:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-techdocs.yaml@main
+    with:
+      publish: ${{ github.event_name != 'pull_request' && vars.TECHDOCS_PUBLISH == 'true' }}
+      # Building needs no lab access; only the upload goes to the lab MinIO.
+      runs-on: ${{ (github.event_name != 'pull_request' && vars.TECHDOCS_PUBLISH == 'true') && 'dagger-labda' || 'ubuntu-latest' }}
+      endpoint: https://minio.sthings-platform.4sthings.tiab.ssc.sva.de
+      ca-cert: ${{ vars.TECHDOCS_CA_CERT }}
+    secrets:
+      TECHDOCS_S3_ACCESS_KEY: ${{ secrets.TECHDOCS_S3_ACCESS_KEY }}
+      TECHDOCS_S3_SECRET_KEY: ${{ secrets.TECHDOCS_S3_SECRET_KEY }}
