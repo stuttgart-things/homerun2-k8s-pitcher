@@ -364,3 +364,39 @@ func TestToMessage(t *testing.T) {
 		t.Errorf("system fallback = %q", msg.System)
 	}
 }
+
+// A Kubernetes Event's severity comes from its own type, not from add or
+// update (#85).
+func TestToMessage_EventSeverity(t *testing.T) {
+	ev := func(eventType, typ string) K8sEvent {
+		return K8sEvent{Kind: "Event", Name: "pod.18e0", EventType: eventType, Object: map[string]any{"type": typ}}
+	}
+	for _, tc := range []struct {
+		name string
+		ev   K8sEvent
+		want string
+	}{
+		{"Warning add", ev("add", "Warning"), "warning"},
+		{"Warning update", ev("update", "Warning"), "warning"},
+		{"Normal add", ev("add", "Normal"), "info"},
+		{"snapshot", ev("snapshot", "Warning"), "warning"},
+		{"delete is TTL expiry", ev("delete", "Warning"), "info"},
+		{"unknown type falls back", ev("add", ""), "SUCCESS"},
+		{"other kinds unchanged", K8sEvent{Kind: "Pod", EventType: "add", Object: map[string]any{"type": "Warning"}}, "SUCCESS"},
+	} {
+		msg, err := toMessage(tc.ev, "labda", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Severity != tc.want {
+			t.Errorf("%s: severity %q, want %q", tc.name, msg.Severity, tc.want)
+		}
+	}
+
+	// An explicit severity still wins: deleteSeverity from the profile.
+	e := ev("delete", "Warning")
+	e.Severity = "warning"
+	if msg, _ := toMessage(e, "labda", ""); msg.Severity != "warning" {
+		t.Errorf("explicit severity: %q", msg.Severity)
+	}
+}

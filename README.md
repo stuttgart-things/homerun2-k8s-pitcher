@@ -115,7 +115,7 @@ VM and cluster claims.
 |---|---|---|
 | `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
 | `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
-| `deleteSeverity` | `WARNING` | e.g. `info` for claims that are deleted on purpose |
+| `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
 | `includeObject` | `false` | Append the whole object as JSON to the summary. Off, the message body is the summary only. |
 
 A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
@@ -123,6 +123,13 @@ A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
 to `True` `success`; a generation change is `info`. A condition that shows up
 for the first time is not a flip. Messages carry `system: k8s-<cluster>`, so
 scout and the AI pitcher can tell clusters apart.
+
+Kubernetes `Event` objects (from an informer or a collector snapshot) take
+their severity from their own `type`: `Warning` is `warning`, `Normal`
+`info`. An Event says that something happened, not that it went well. Their
+deletion is TTL expiry and pitched as `info` unless `deleteSeverity` is set
+(#85). Every other kind keeps `add`/`update` → `SUCCESS`, `delete` →
+`WARNING`, a snapshot `INFO`.
 
 ## Flux Notification Webhook
 

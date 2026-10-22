@@ -114,6 +114,9 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 
 	sev := event.Severity
 	if sev == "" {
+		sev = eventSeverity(event)
+	}
+	if sev == "" {
 		sev = severityFor(event.EventType)
 	}
 
@@ -139,6 +142,27 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 		System:    sys,
 		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
 	}, nil
+}
+
+// eventSeverity is the severity of a Kubernetes Event from its own type
+// (#85): Warning is warning, Normal info -- an Event says that something
+// happened, not that it went well. Its deletion is TTL expiry, not news, so
+// info as well. "" for any other kind, or an Event without a known type.
+func eventSeverity(event K8sEvent) string {
+	if event.Kind != "Event" {
+		return ""
+	}
+	if event.EventType == "delete" {
+		return "info"
+	}
+	switch t, _ := event.Object["type"].(string); t {
+	case "Warning":
+		return "warning"
+	case "Normal":
+		return "info"
+	default:
+		return ""
+	}
 }
 
 func severityFor(eventType string) string {
