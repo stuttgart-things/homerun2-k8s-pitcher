@@ -24,24 +24,25 @@ spec:
     max: 20
     per: 10m
   informers:
-    # Nodes: NotReady <-> Ready
+    # Nodes: NotReady <-> Ready. updates: flips everywhere: a generation
+    # (spec) change is no news (#93).
     - group: ""
       version: v1
       resource: nodes
       events: [update]
-      updates: conditions
+      updates: flips
     # Flux: only lasting failures (#89). Every new revision flips each
     # Kustomization to Ready=Unknown (Progressing), often Ready=False
     # (DependencyNotReady), and back within seconds: those flips are
     # ignored. A failure is pitched once it has lasted 5 minutes (with how
     # long it has been failing), its recovery only if the failure was
-    # pitched. Needs the k8s-pitcher release with #89; v1.3.x and older
-    # ignore these fields and pitch every flip.
+    # pitched. Needs the k8s-pitcher release with #93 (updates: flips);
+    # older images reject the profile at start-up.
     - group: kustomize.toolkit.fluxcd.io
       version: v1
       resource: kustomizations
       events: [update]
-      updates: conditions
+      updates: flips
       ignoreStatuses: [Unknown]
       ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
       minDuration: 5m
@@ -49,7 +50,7 @@ spec:
       version: v2
       resource: helmreleases
       events: [update]
-      updates: conditions
+      updates: flips
       ignoreStatuses: [Unknown]
       ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
       minDuration: 5m

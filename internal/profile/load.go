@@ -58,9 +58,9 @@ func validate(p *K8sPitcherProfile) error {
 			return fmt.Errorf("spec.informers[%d].events must not be empty", i)
 		}
 		switch inf.Updates {
-		case "", UpdatesConditions, UpdatesGeneration, UpdatesAll:
+		case "", UpdatesConditions, UpdatesFlips, UpdatesGeneration, UpdatesAll:
 		default:
-			return fmt.Errorf("spec.informers[%d].updates must be conditions, generation or all (got %q)", i, inf.Updates)
+			return fmt.Errorf("spec.informers[%d].updates must be conditions, flips, generation or all (got %q)", i, inf.Updates)
 		}
 		switch strings.ToLower(inf.DeleteSeverity) {
 		case "", "info", "success", "warning", "error", "critical":
@@ -117,14 +117,14 @@ func validateEventFilter(inf InformerSpec) error {
 }
 
 // validateConditionFilter allows ignoreStatuses, ignoreReasons and
-// minDuration only on an informer with updates: conditions that watches
-// updates.
+// minDuration only on an informer with updates: conditions or flips that
+// watches updates.
 func validateConditionFilter(inf InformerSpec) error {
 	if !inf.HasConditionFilter() {
 		return nil
 	}
-	if inf.Updates != "" && inf.Updates != UpdatesConditions {
-		return fmt.Errorf("ignoreStatuses, ignoreReasons and minDuration are only allowed with updates: conditions (got %q)", inf.Updates)
+	if inf.Updates != "" && !inf.WatchesFlips() {
+		return fmt.Errorf("ignoreStatuses, ignoreReasons and minDuration are only allowed with updates: conditions or flips (got %q)", inf.Updates)
 	}
 	if !slices.Contains(inf.Events, "update") {
 		return fmt.Errorf("ignoreStatuses, ignoreReasons and minDuration need update in events")

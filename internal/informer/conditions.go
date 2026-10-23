@@ -183,7 +183,7 @@ func (t *conditionTracker) update(oldU, newU *unstructured.Unstructured) {
 		t.m.pitch(t.spec, t.gvr, newU, flipEvent(newU, flips))
 		return
 	}
-	if oldU.GetGeneration() != newU.GetGeneration() {
+	if t.spec.Updates != profile.UpdatesFlips && oldU.GetGeneration() != newU.GetGeneration() {
 		t.m.pitch(t.spec, t.gvr, newU, pitcher.K8sEvent{EventType: "update", Severity: "info"})
 	}
 }
