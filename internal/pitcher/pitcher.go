@@ -35,6 +35,9 @@ type K8sEvent struct {
 	Subsystem string         `json:"subsystem,omitempty"` // source subsystem (e.g. "flux", "kubernetes")
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
+	// Key groups repeats of the same problem for the cooldown; empty is
+	// never deduplicated.
+	Key string `json:"-"`
 }
 
 // K8sPitcher pitches Kubernetes events to Redis Streams via homerun-library.
@@ -130,7 +133,17 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 
 	title := event.Title
 	if title == "" {
+		title = eventTitle(event)
+	}
+	if title == "" {
 		title = fmt.Sprintf("%s/%s %s", event.Kind, event.Name, event.EventType)
+	}
+
+	tags := fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace)
+	if event.Kind == "Event" {
+		if reason, _, _, _ := EventSubject(event.Object); reason != "" {
+			tags += "," + reason
+		}
 	}
 
 	return homerun.Message{
@@ -140,7 +153,7 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 		Author:    "k8s-pitcher-" + cluster,
 		Timestamp: event.Timestamp,
 		System:    sys,
-		Tags:      fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace),
+		Tags:      tags,
 	}, nil
 }
 
@@ -163,6 +176,39 @@ func eventSeverity(event K8sEvent) string {
 	default:
 		return ""
 	}
+}
+
+// eventTitle is the title of an added or updated Kubernetes Event (#87):
+// "<Reason>: <Kind> <ns>/<name>" of the involved object, e.g.
+// "BackOff: Pod shop/api-7d9", so repeats of one problem share a title.
+// "" for any other kind, a delete or snapshot, or an Event without reason.
+func eventTitle(event K8sEvent) string {
+	if event.Kind != "Event" || (event.EventType != "add" && event.EventType != "update") {
+		return ""
+	}
+	reason, kind, ns, name := EventSubject(event.Object)
+	if reason == "" || name == "" {
+		return ""
+	}
+	if ns != "" {
+		name = ns + "/" + name
+	}
+	return fmt.Sprintf("%s: %s %s", reason, kind, name)
+}
+
+// EventSubject returns the reason and the involved object (kind, namespace,
+// name) of a Kubernetes Event, core/v1 (involvedObject) or events.k8s.io
+// (regarding).
+func EventSubject(obj map[string]any) (reason, kind, namespace, name string) {
+	reason, _ = obj["reason"].(string)
+	inv, ok := obj["involvedObject"].(map[string]any)
+	if !ok {
+		inv, _ = obj["regarding"].(map[string]any)
+	}
+	kind, _ = inv["kind"].(string)
+	namespace, _ = inv["namespace"].(string)
+	name, _ = inv["name"].(string)
+	return reason, kind, namespace, name
 }
 
 func severityFor(eventType string) string {

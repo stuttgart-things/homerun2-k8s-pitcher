@@ -1,0 +1,58 @@
+# Only events that matter for a cluster, never a flood (#87): failing nodes
+# and Flux objects, and Warning Events with a reason worth a message.
+# FailedScheduling and Unhealthy (probes) stay out, they are too noisy.
+# No collectors, no inventory on restart (pitchInitialList: false).
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: important-events
+spec:
+  cluster: my-cluster            # in-cluster there is no kubeconfig context
+  pitcher:
+    addr: https://omni.example.com/pitch
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: omni-pitcher-token
+        namespace: homerun2
+        key: auth-token
+  # The same object/reason or condition flip at most once per hour.
+  cooldown: 1h
+  # At most 20 messages per 10 minutes; anything above is replaced by one
+  # "k8s-pitcher: N events suppressed" warning per window.
+  rateLimit:
+    max: 20
+    per: 10m
+  informers:
+    # Nodes: NotReady <-> Ready
+    - group: ""
+      version: v1
+      resource: nodes
+      events: [update]
+      updates: conditions
+    # Flux: Ready flips
+    - group: kustomize.toolkit.fluxcd.io
+      version: v1
+      resource: kustomizations
+      events: [update]
+      updates: conditions
+    - group: helm.toolkit.fluxcd.io
+      version: v2
+      resource: helmreleases
+      events: [update]
+      updates: conditions
+    # Warning Events with an important reason
+    - group: ""
+      version: v1
+      resource: events
+      events: [add]
+      types: [Warning]
+      reasons:
+        - BackOff
+        - OOMKilling
+        - Evicted
+        - FailedMount
+        - FailedAttachVolume
+        - BackoffLimitExceeded
+        - ProvisioningFailed
+        - NodeNotReady

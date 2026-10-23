@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,6 +76,9 @@ func (m *Manager) Start(ctx context.Context) {
 			"events", spec.Events,
 			"updates", spec.Updates,
 			"pitchInitialList", spec.PitchInitialList,
+			"types", spec.Types,
+			"reasons", spec.Reasons,
+			"excludeReasons", spec.ExcludeReasons,
 		)
 
 		go informer.Run(ctx.Done())
@@ -87,7 +91,8 @@ func (m *Manager) Start(ctx context.Context) {
 
 // handlerFor builds the event handler of one informer. Adds from the initial
 // list are dropped unless pitchInitialList is set, so a restart does not
-// re-pitch the inventory; updates pass the spec's update filter.
+// re-pitch the inventory; updates pass the spec's update filter. Kubernetes
+// Events pass the spec's Event filter first.
 func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionResource) cache.ResourceEventHandler {
 	wantEvents := toSet(spec.Events)
 	handler := cache.ResourceEventHandlerDetailedFuncs{}
@@ -96,7 +101,7 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 			if isInInitialList && !spec.PitchInitialList {
 				return
 			}
-			if u, ok := obj.(*unstructured.Unstructured); ok {
+			if u, ok := obj.(*unstructured.Unstructured); ok && eventPasses(spec, u) {
 				m.pitch(spec, gvr, u, pitcher.K8sEvent{EventType: "add"})
 			}
 		}
@@ -105,7 +110,7 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 		handler.UpdateFunc = func(oldObj, newObj any) {
 			oldU, ok1 := oldObj.(*unstructured.Unstructured)
 			newU, ok2 := newObj.(*unstructured.Unstructured)
-			if !ok1 || !ok2 {
+			if !ok1 || !ok2 || !eventPasses(spec, newU) {
 				return
 			}
 			if ev, ok := updateEvent(spec.Updates, oldU, newU); ok {
@@ -119,12 +124,30 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 			if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 				obj = d.Obj
 			}
-			if u, ok := obj.(*unstructured.Unstructured); ok {
+			if u, ok := obj.(*unstructured.Unstructured); ok && eventPasses(spec, u) {
 				m.pitch(spec, gvr, u, pitcher.K8sEvent{EventType: "delete", Severity: spec.DeleteSeverity})
 			}
 		}
 	}
 	return handler
+}
+
+// eventPasses applies the spec's Event filter (#87): the Event's type must be
+// in types, its reason in reasons and not in excludeReasons; an unset list
+// passes everything. Without a filter every object passes.
+func eventPasses(spec profile.InformerSpec, u *unstructured.Unstructured) bool {
+	if !spec.HasEventFilter() {
+		return true
+	}
+	typ, _ := u.Object["type"].(string)
+	reason, _ := u.Object["reason"].(string)
+	if len(spec.Types) > 0 && !slices.Contains(spec.Types, typ) {
+		return false
+	}
+	if len(spec.Reasons) > 0 && !slices.Contains(spec.Reasons, reason) {
+		return false
+	}
+	return !slices.Contains(spec.ExcludeReasons, reason)
 }
 
 // watchedConditions are compared between old and new object.
@@ -224,6 +247,7 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	ev.Summary = text
 	ev.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	ev.Cluster = m.clusterName
+	ev.Key = m.cooldownKey(ev)
 
 	if err := m.pitcher.Pitch(ev); err != nil {
 		slog.Error("informer pitch failed",
@@ -233,6 +257,23 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 			"error", err,
 		)
 	}
+}
+
+// cooldownKey groups repeats of one problem: an added or updated Kubernetes
+// Event by involved object and reason, a condition flip by object and flip.
+// Everything else gets no key and is never deduplicated.
+func (m *Manager) cooldownKey(ev pitcher.K8sEvent) string {
+	if ev.Kind == "Event" && (ev.EventType == "add" || ev.EventType == "update") {
+		reason, kind, ns, name := pitcher.EventSubject(ev.Object)
+		if reason != "" && name != "" {
+			return strings.Join([]string{m.clusterName, kind, ns, name, reason}, "|")
+		}
+		return ""
+	}
+	if ev.EventType == "update" && ev.Title != "" {
+		return strings.Join([]string{m.clusterName, ev.Kind, ev.Namespace, ev.Name, ev.Title}, "|")
+	}
+	return ""
 }
 
 func toMap(obj any) (map[string]any, error) {

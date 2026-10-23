@@ -400,3 +400,40 @@ func TestToMessage_EventSeverity(t *testing.T) {
 		t.Errorf("explicit severity: %q", msg.Severity)
 	}
 }
+
+// A Kubernetes Event is titled after its reason and involved object and
+// tagged with the reason, so repeats of one problem can be grouped (#87).
+func TestToMessage_EventTitleAndTags(t *testing.T) {
+	podEvent := map[string]any{
+		"type": "Warning", "reason": "BackOff",
+		"involvedObject": map[string]any{"kind": "Pod", "namespace": "shop", "name": "api-7d9"},
+	}
+	nodeEvent := map[string]any{
+		"type": "Warning", "reason": "NodeNotReady",
+		"regarding": map[string]any{"kind": "Node", "name": "worker-1"},
+	}
+	for _, tc := range []struct {
+		name        string
+		ev          K8sEvent
+		title, tags string
+	}{
+		{"add", K8sEvent{Kind: "Event", Name: "api-7d9.18e0", Namespace: "shop", EventType: "add", Object: podEvent},
+			"BackOff: Pod shop/api-7d9", "k8s,Event,add,shop,BackOff"},
+		{"cluster-scoped, events.k8s.io", K8sEvent{Kind: "Event", Name: "worker-1.18e0", Namespace: "default", EventType: "update", Object: nodeEvent},
+			"NodeNotReady: Node worker-1", "k8s,Event,update,default,NodeNotReady"},
+		{"delete keeps the default title", K8sEvent{Kind: "Event", Name: "api-7d9.18e0", Namespace: "shop", EventType: "delete", Object: podEvent},
+			"Event/api-7d9.18e0 delete", "k8s,Event,delete,shop,BackOff"},
+		{"no reason", K8sEvent{Kind: "Event", Name: "e1", Namespace: "shop", EventType: "add", Object: map[string]any{"type": "Normal"}},
+			"Event/e1 add", "k8s,Event,add,shop"},
+		{"other kinds unchanged", K8sEvent{Kind: "Pod", Name: "p1", Namespace: "shop", EventType: "add", Object: podEvent},
+			"Pod/p1 add", "k8s,Pod,add,shop"},
+	} {
+		msg, err := toMessage(tc.ev, "labda", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.Title != tc.title || msg.Tags != tc.tags {
+			t.Errorf("%s: got %q / %q, want %q / %q", tc.name, msg.Title, msg.Tags, tc.title, tc.tags)
+		}
+	}
+}

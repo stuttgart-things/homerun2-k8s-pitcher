@@ -66,6 +66,20 @@ func validate(p *K8sPitcherProfile) error {
 		default:
 			return fmt.Errorf("spec.informers[%d].deleteSeverity must be info, success, warning, error or critical (got %q)", i, inf.DeleteSeverity)
 		}
+		if err := validateEventFilter(inf); err != nil {
+			return fmt.Errorf("spec.informers[%d]: %w", i, err)
+		}
+	}
+	if p.Spec.Cooldown < 0 {
+		return fmt.Errorf("spec.cooldown must not be negative")
+	}
+	if rl := p.Spec.RateLimit; rl != nil {
+		if rl.Max <= 0 {
+			return fmt.Errorf("spec.rateLimit.max must be positive")
+		}
+		if rl.Per <= 0 {
+			return fmt.Errorf("spec.rateLimit.per must be positive")
+		}
 	}
 	for i, col := range p.Spec.Collectors {
 		if col.Kind == "" {
@@ -73,6 +87,26 @@ func validate(p *K8sPitcherProfile) error {
 		}
 		if col.Interval <= 0 {
 			return fmt.Errorf("spec.collectors[%d].interval must be positive", i)
+		}
+	}
+	return nil
+}
+
+// validateEventFilter allows types, reasons and excludeReasons only on an
+// informer of Kubernetes Events, and either reasons or excludeReasons.
+func validateEventFilter(inf InformerSpec) error {
+	if !inf.HasEventFilter() {
+		return nil
+	}
+	if inf.Resource != "events" {
+		return fmt.Errorf("types, reasons and excludeReasons are only allowed with resource events (got %q)", inf.Resource)
+	}
+	if len(inf.Reasons) > 0 && len(inf.ExcludeReasons) > 0 {
+		return fmt.Errorf("reasons and excludeReasons are mutually exclusive")
+	}
+	for _, t := range inf.Types {
+		if t != "Normal" && t != "Warning" {
+			return fmt.Errorf("types must be Normal or Warning (got %q)", t)
 		}
 	}
 	return nil
