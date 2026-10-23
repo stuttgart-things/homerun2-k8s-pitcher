@@ -30,7 +30,8 @@ K8s API → informers (real-time add/update/delete)  → Redis Streams
 - `internal/informer/` — dynamic informer manager (any GVR including CRDs)
 - `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
 - `internal/config/` — logging setup
-- `profiles/` — example YAML profiles (dev, production)
+- `internal/throttle/` — cooldown and rate limit around the pitcher (#87)
+- `profiles/` — example YAML profiles (dev, production, crossplane-inventory, important-events)
 
 ## CLI Usage
 

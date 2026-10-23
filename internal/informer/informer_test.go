@@ -3,6 +3,7 @@ package informer
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -337,5 +338,94 @@ func TestPitchInitialList(t *testing.T) {
 	events := waitFor(t, mp, 1)
 	if len(events) != 1 || events[0].Name != "existing" || events[0].EventType != "add" {
 		t.Errorf("expected the initial list as add, got %+v", events)
+	}
+}
+
+func k8sEvent(name, typ, reason string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Event",
+		"metadata":   map[string]any{"name": name, "namespace": "shop"},
+		"type":       typ,
+		"reason":     reason,
+		"involvedObject": map[string]any{
+			"kind": "Pod", "namespace": "shop", "name": "api-7d9",
+		},
+	}}
+}
+
+func TestEventFilter(t *testing.T) {
+	gvr := schema.GroupVersionResource{Version: "v1", Resource: "events"}
+	all := []*unstructured.Unstructured{
+		k8sEvent("e1", "Warning", "BackOff"),
+		k8sEvent("e2", "Warning", "FailedScheduling"),
+		k8sEvent("e3", "Normal", "BackOff"),
+		k8sEvent("e4", "Normal", "Pulled"),
+	}
+	tests := []struct {
+		name string
+		spec profile.InformerSpec
+		want []string
+	}{
+		{"no filter", profile.InformerSpec{}, []string{"e1", "e2", "e3", "e4"}},
+		{"types", profile.InformerSpec{Types: []string{"Warning"}}, []string{"e1", "e2"}},
+		{"reasons", profile.InformerSpec{Reasons: []string{"BackOff"}}, []string{"e1", "e3"}},
+		{"types and reasons", profile.InformerSpec{Types: []string{"Warning"}, Reasons: []string{"BackOff"}}, []string{"e1"}},
+		{"excludeReasons", profile.InformerSpec{ExcludeReasons: []string{"FailedScheduling", "Pulled"}}, []string{"e1", "e3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mp := &mockPitcher{}
+			mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c1")
+			tt.spec.Resource = "events"
+			tt.spec.Events = []string{"add", "delete"}
+			h := mgr.handlerFor(tt.spec, gvr)
+			for _, e := range all {
+				h.OnAdd(e, false)
+			}
+			var got []string
+			for _, e := range mp.Events() {
+				got = append(got, e.Name)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Errorf("pitched %v, want %v", got, tt.want)
+			}
+			// Deletes are filtered the same way.
+			n := len(mp.Events())
+			h.OnDelete(all[3])
+			if pitched := len(mp.Events()) > n; pitched != slices.Contains(tt.want, "e4") {
+				t.Errorf("delete of e4 pitched = %v", pitched)
+			}
+		})
+	}
+}
+
+func TestCooldownKey(t *testing.T) {
+	mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), &mockPitcher{}, nil, "c1")
+	obj := k8sEvent("e1", "Warning", "BackOff").Object
+	for _, tc := range []struct {
+		name string
+		ev   pitcher.K8sEvent
+		want string
+	}{
+		{"event add", pitcher.K8sEvent{Kind: "Event", EventType: "add", Object: obj}, "c1|Pod|shop|api-7d9|BackOff"},
+		{"event delete", pitcher.K8sEvent{Kind: "Event", EventType: "delete", Object: obj}, ""},
+		{"condition flip", pitcher.K8sEvent{Kind: "Node", Name: "w1", EventType: "update", Title: "Node/w1 Ready=False"}, "c1|Node||w1|Node/w1 Ready=False"},
+		{"generation change", pitcher.K8sEvent{Kind: "Node", Name: "w1", EventType: "update"}, ""},
+		{"plain add", pitcher.K8sEvent{Kind: "Pod", Name: "p1", EventType: "add"}, ""},
+	} {
+		if got := mgr.cooldownKey(tc.ev); got != tc.want {
+			t.Errorf("%s: key %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// Two Event objects about the same problem share a key.
+	mp := &mockPitcher{}
+	mgr = New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c1")
+	gvr := schema.GroupVersionResource{Version: "v1", Resource: "events"}
+	mgr.pitch(profile.InformerSpec{}, gvr, k8sEvent("api-7d9.1", "Warning", "BackOff"), pitcher.K8sEvent{EventType: "add"})
+	mgr.pitch(profile.InformerSpec{}, gvr, k8sEvent("api-7d9.2", "Warning", "BackOff"), pitcher.K8sEvent{EventType: "add"})
+	if ev := mp.Events(); len(ev) != 2 || ev[0].Key == "" || ev[0].Key != ev[1].Key {
+		t.Errorf("keys differ: %+v", ev)
 	}
 }

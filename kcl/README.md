@@ -175,3 +175,46 @@ config.profileYaml: |
         namespace: "*"
         events: [add, update, delete]
 ```
+
+### Important events only (#87)
+
+Cooldown, rate limit and Event filters are profile fields, so they go into
+`config.profileYaml` (see `profiles/important-events.yaml`). Nodes and Events
+are in the default `watchedResources`; the Flux objects need RBAC:
+
+```yaml
+config.extraRbacRules:
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+config.profileYaml: |
+  apiVersion: homerun2.sthings.io/v1alpha1
+  kind: K8sPitcherProfile
+  metadata:
+    name: important-events
+  spec:
+    cluster: my-cluster
+    pitcher:
+      addr: https://omni.example.com/pitch
+    auth:
+      tokenFrom:
+        secretKeyRef:
+          name: omni-pitcher-token
+          namespace: homerun2
+          key: auth-token
+    cooldown: 1h
+    rateLimit:
+      max: 20
+      per: 10m
+    informers:
+      - { group: "", version: v1, resource: nodes, events: [update] }
+      - { group: kustomize.toolkit.fluxcd.io, version: v1, resource: kustomizations, events: [update] }
+      - { group: helm.toolkit.fluxcd.io, version: v2, resource: helmreleases, events: [update] }
+      - group: ""
+        version: v1
+        resource: events
+        events: [add]
+        types: [Warning]
+        reasons: [BackOff, OOMKilling, Evicted, FailedMount, FailedAttachVolume, BackoffLimitExceeded, ProvisioningFailed, NodeNotReady]
+```

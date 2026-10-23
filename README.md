@@ -107,7 +107,8 @@ spec:
 ```
 
 See `profiles/` for complete examples, `profiles/crossplane-inventory.yaml` for
-VM and cluster claims.
+VM and cluster claims, `profiles/important-events.yaml` for a cluster that
+should only report what matters.
 
 ### Informer options
 
@@ -117,6 +118,9 @@ VM and cluster claims.
 | `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
 | `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
 | `includeObject` | `false` | Append the whole object as JSON to the summary. Off, the message body is the summary only. |
+| `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
+| `reasons` | *(all)* | `resource: events` only. Allowlist of Event reasons, e.g. `[BackOff, OOMKilling]`. |
+| `excludeReasons` | *(none)* | `resource: events` only. Denylist of Event reasons; mutually exclusive with `reasons`. |
 
 A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
 `False` is `error`, `Synced` to `False` or either to `Unknown` `warning`, back
@@ -129,7 +133,33 @@ their severity from their own `type`: `Warning` is `warning`, `Normal`
 `info`. An Event says that something happened, not that it went well. Their
 deletion is TTL expiry and pitched as `info` unless `deleteSeverity` is set
 (#85). Every other kind keeps `add`/`update` → `SUCCESS`, `delete` →
-`WARNING`, a snapshot `INFO`.
+`WARNING`, a snapshot `INFO`. An added or updated Event is titled after its
+reason and involved object, `BackOff: Pod shop/api-7d9` (`NodeNotReady: Node
+worker-1` when cluster-scoped), and its reason is appended to the tags:
+`k8s,Event,add,shop,BackOff` (#87).
+
+### Cooldown and rate limit
+
+Two `spec` fields keep a cluster from flooding the target (#87). Both are off
+when unset and apply to every source (informers, collectors, webhook):
+
+```yaml
+spec:
+  cooldown: 1h        # same Event (involved object + reason) or condition flip at most once per hour
+  rateLimit:
+    max: 20           # at most 20 messages ...
+    per: 10m          # ... per 10 minutes
+```
+
+- `cooldown`: a repeat of the same problem within the window is dropped and
+  counted. Keys are the involved object and reason of a Kubernetes Event, or
+  the object and the flip (`Ready=False (...)`) of a condition update. The
+  first repeat after the window is pitched again, with `Repeats: <n> since
+  <time>` appended to the message. Adds, deletes and snapshots of other kinds
+  are never deduplicated.
+- `rateLimit`: messages above `max` per `per` are dropped. Once the window is
+  over, a single `k8s-pitcher: <n> events suppressed` (`warning`) is pitched
+  instead.
 
 ## Flux Notification Webhook
 

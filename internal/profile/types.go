@@ -27,6 +27,19 @@ type Spec struct {
 	Webhook    WebhookConfig   `yaml:"webhook"`
 	Collectors []CollectorSpec `yaml:"collectors"`
 	Informers  []InformerSpec  `yaml:"informers"`
+	// Cooldown drops a repeat of the same Kubernetes Event (involved object
+	// and reason) or the same condition flip within this window; the next
+	// one after it carries the number of repeats. 0 (default) is off.
+	Cooldown time.Duration `yaml:"cooldown"`
+	// RateLimit caps the messages of all sources; off if unset.
+	RateLimit *RateLimit `yaml:"rateLimit"`
+}
+
+// RateLimit allows Max messages per window. Messages above it are dropped
+// and, once per window, replaced by a single "N events suppressed" warning.
+type RateLimit struct {
+	Max int           `yaml:"max"`
+	Per time.Duration `yaml:"per"`
 }
 
 type WebhookConfig struct {
@@ -96,4 +109,15 @@ type InformerSpec struct {
 	DeleteSeverity string `yaml:"deleteSeverity"`
 	// IncludeObject appends the whole object as JSON to the summary.
 	IncludeObject bool `yaml:"includeObject"`
+	// Types, Reasons and ExcludeReasons filter Kubernetes Events (resource
+	// events only): Types by type (Normal, Warning), Reasons as an allowlist
+	// and ExcludeReasons as a denylist of reasons. Unset passes every Event.
+	Types          []string `yaml:"types"`
+	Reasons        []string `yaml:"reasons"`
+	ExcludeReasons []string `yaml:"excludeReasons"`
+}
+
+// HasEventFilter reports whether the informer filters Kubernetes Events.
+func (s InformerSpec) HasEventFilter() bool {
+	return len(s.Types) > 0 || len(s.Reasons) > 0 || len(s.ExcludeReasons) > 0
 }

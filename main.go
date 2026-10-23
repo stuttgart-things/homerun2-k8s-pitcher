@@ -19,6 +19,7 @@ import (
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/kube"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/throttle"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/webhook"
 
 	homerun "github.com/stuttgart-things/homerun-library/v4"
@@ -128,6 +129,20 @@ func main() {
 			"port", prof.Spec.Redis.Port,
 			"stream", prof.Spec.Redis.Stream,
 		)
+	}
+
+	// Cooldown and rate limit (#87) apply to every source: collectors,
+	// informers and the webhook. Unset, the pitcher is used as is.
+	if prof.Spec.Cooldown > 0 || prof.Spec.RateLimit != nil {
+		tp := throttle.New(p, prof.Spec.Cooldown, prof.Spec.RateLimit, kubeClient.ClusterName)
+		attrs := []any{"cooldown", prof.Spec.Cooldown.String()}
+		if rl := prof.Spec.RateLimit; rl != nil {
+			// Flush the suppressed summary of a window even when it stays quiet.
+			go tp.Run(ctx, min(rl.Per, 30*time.Second))
+			attrs = append(attrs, "rateLimitMax", rl.Max, "rateLimitPer", rl.Per.String())
+		}
+		p = tp
+		slog.Info("throttle enabled", attrs...)
 	}
 
 	// Start collectors

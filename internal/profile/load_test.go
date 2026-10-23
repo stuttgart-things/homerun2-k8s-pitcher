@@ -395,3 +395,98 @@ spec:
 		}
 	}
 }
+
+func TestLoadImportantEventsProfile(t *testing.T) {
+	p, err := Load("../../profiles/important-events.yaml")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(p.Spec.Collectors) != 0 {
+		t.Errorf("expected no collectors, got %d", len(p.Spec.Collectors))
+	}
+	if p.Spec.Cooldown != time.Hour {
+		t.Errorf("cooldown = %v, want 1h", p.Spec.Cooldown)
+	}
+	if rl := p.Spec.RateLimit; rl == nil || rl.Max != 20 || rl.Per != 10*time.Minute {
+		t.Errorf("rateLimit = %+v, want 20 per 10m", rl)
+	}
+	var events *InformerSpec
+	for i := range p.Spec.Informers {
+		if p.Spec.Informers[i].Resource == "events" {
+			events = &p.Spec.Informers[i]
+		}
+	}
+	if events == nil {
+		t.Fatal("no events informer")
+	}
+	if len(events.Types) != 1 || events.Types[0] != "Warning" {
+		t.Errorf("types = %v, want [Warning]", events.Types)
+	}
+	for _, r := range events.Reasons {
+		if r == "FailedScheduling" || r == "Unhealthy" {
+			t.Errorf("noisy reason %s must not be in the profile", r)
+		}
+	}
+	if len(events.Reasons) != 8 {
+		t.Errorf("reasons = %v, want 8", events.Reasons)
+	}
+}
+
+func TestLoadThrottleUnset(t *testing.T) {
+	p, err := Load(writeTempFile(t, `
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - version: v1
+      resource: events
+      events: [add]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Spec.Cooldown != 0 || p.Spec.RateLimit != nil || p.Spec.Informers[0].HasEventFilter() {
+		t.Errorf("unset fields must stay off: %+v", p.Spec)
+	}
+}
+
+func TestLoadEventFilterErrors(t *testing.T) {
+	tests := map[string]string{
+		"filter on pods": `
+  informers:
+    - { version: v1, resource: pods, events: [add], types: [Warning] }`,
+		"unknown type": `
+  informers:
+    - { version: v1, resource: events, events: [add], types: [Error] }`,
+		"reasons and excludeReasons": `
+  informers:
+    - { version: v1, resource: events, events: [add], reasons: [BackOff], excludeReasons: [Unhealthy] }`,
+		"negative cooldown": `
+  cooldown: -1m
+  informers:
+    - { version: v1, resource: events, events: [add] }`,
+		"rateLimit without max": `
+  rateLimit: { per: 10m }
+  informers:
+    - { version: v1, resource: events, events: [add] }`,
+		"rateLimit without per": `
+  rateLimit: { max: 20 }
+  informers:
+    - { version: v1, resource: events, events: [add] }`,
+	}
+	for name, spec := range tests {
+		path := writeTempFile(t, "spec:\n  redis: { addr: r, stream: s }"+spec+"\n")
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
+	}
+
+	ok := writeTempFile(t, `
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - { version: v1, resource: events, events: [add], types: [Normal, Warning], excludeReasons: [Unhealthy] }
+`)
+	if _, err := Load(ok); err != nil {
+		t.Errorf("valid filter rejected: %v", err)
+	}
+}
