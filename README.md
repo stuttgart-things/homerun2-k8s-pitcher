@@ -121,6 +121,9 @@ should only report what matters.
 | `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
 | `reasons` | *(all)* | `resource: events` only. Allowlist of Event reasons, e.g. `[BackOff, OOMKilling]`. |
 | `excludeReasons` | *(none)* | `resource: events` only. Denylist of Event reasons; mutually exclusive with `reasons`. |
+| `ignoreStatuses` | *(none)* | `updates: conditions` only. Flips to these statuses (`Unknown`, `False`) are not pitched. See [Lasting failures only](#lasting-failures-only). |
+| `ignoreReasons` | *(none)* | `updates: conditions` only. Flips to a condition with one of these reasons are not pitched. |
+| `minDuration` | `0` (off) | `updates: conditions` only. A failure is pitched once it has lasted this long, e.g. `5m`. |
 
 A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
 `False` is `error`, `Synced` to `False` or either to `Unknown` `warning`, back
@@ -137,6 +140,60 @@ deletion is TTL expiry and pitched as `info` unless `deleteSeverity` is set
 reason and involved object, `BackOff: Pod shop/api-7d9` (`NodeNotReady: Node
 worker-1` when cluster-scoped), and its reason is appended to the tags:
 `k8s,Event,add,shop,BackOff` (#87).
+
+### Lasting failures only
+
+Flux flips every Kustomization to `Ready=Unknown (Progressing)`, often
+`Ready=False (DependencyNotReady)`, and back to `Ready=True` within seconds
+on each new revision. Three optional informer fields keep that noise out and
+report real failures (#89):
+
+```yaml
+informers:
+  - group: kustomize.toolkit.fluxcd.io
+    version: v1
+    resource: kustomizations
+    events: [update]
+    updates: conditions
+    ignoreStatuses: [Unknown]
+    ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
+    minDuration: 5m
+```
+
+- A flip **to** an ignored status or reason is not pitched. The next flip is
+  compared against the last **reported** state, so `True → Unknown
+  (Progressing) → True` sends nothing, and a failure keeps running through
+  ignored states in between (a Flux retry does not restart it).
+- A failure (a condition that is not `True`) is pitched only once it has
+  lasted `minDuration` and is still failing. The title stays
+  `Kustomization/app Ready=False (BuildFailed)`; the message starts with
+  `Failing for 5m0s (since <time>)`. A failure that recovers earlier sends
+  nothing.
+- A recovery (`→ True`) is pitched only if its failure was pitched.
+- A failure ends only with a flip back to `True`; ignored states in between
+  (a retry going `Progressing`) do not end it. The delayed message is titled
+  with the last failure state that is not ignored.
+- With `minDuration`, a failure that is already there when the pitcher
+  starts counts from the first update it sees; a healthy object seen first
+  is never a recovery. Without `minDuration` the first update is compared
+  with the old object, as for plain flips.
+- Pending failures are kept in memory, per object, like the cooldown: a
+  restart or the deletion of the object forgets them.
+- Delayed failures go through cooldown and rate limit like any message.
+
+| Case (`minDuration: 5m`) | Pitched |
+|---|---|
+| Burst: `True → Unknown (Progressing) → False (DependencyNotReady) → True` in seconds | nothing |
+| Short failure: `False (BuildFailed)` for 4m, then `True` | nothing |
+| Lasting failure: `False (BuildFailed)` for 5m (retries through `Progressing` included) | one `error` after 5m, with how long it has been failing |
+| Recovery of that failure | one `success` |
+| Object deleted while its failure is pending | nothing |
+
+All three fields are optional; without them every flip is pitched as before.
+They are only allowed with `updates: conditions` and `update` in `events`.
+Images before the release with #89 (v1.3.x and older) ignore these fields:
+the profile is loaded with a plain `yaml.Unmarshal`, so unknown fields are
+dropped without an error, and every flip is pitched.
 
 ### Cooldown and rate limit
 

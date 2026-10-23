@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -28,6 +29,10 @@ type Manager struct {
 	pitcher     pitcher.K8sPitcher
 	specs       []profile.InformerSpec
 	clusterName string
+	clock       clock
+
+	mu       sync.Mutex
+	trackers []*conditionTracker
 }
 
 // New creates an informer Manager.
@@ -37,6 +42,7 @@ func New(client dynamic.Interface, p pitcher.K8sPitcher, specs []profile.Informe
 		pitcher:     p,
 		specs:       specs,
 		clusterName: clusterName,
+		clock:       realClock{},
 	}
 }
 
@@ -79,6 +85,9 @@ func (m *Manager) Start(ctx context.Context) {
 			"types", spec.Types,
 			"reasons", spec.Reasons,
 			"excludeReasons", spec.ExcludeReasons,
+			"ignoreStatuses", spec.IgnoreStatuses,
+			"ignoreReasons", spec.IgnoreReasons,
+			"minDuration", spec.MinDuration,
 		)
 
 		go informer.Run(ctx.Done())
@@ -86,16 +95,29 @@ func (m *Manager) Start(ctx context.Context) {
 
 	// Block until context is cancelled
 	<-ctx.Done()
+	m.mu.Lock()
+	for _, t := range m.trackers {
+		t.close()
+	}
+	m.mu.Unlock()
 	slog.Info("informer manager stopped")
 }
 
 // handlerFor builds the event handler of one informer. Adds from the initial
 // list are dropped unless pitchInitialList is set, so a restart does not
 // re-pitch the inventory; updates pass the spec's update filter. Kubernetes
-// Events pass the spec's Event filter first.
+// Events pass the spec's Event filter first. With a condition filter (#89)
+// updates go through a conditionTracker, which also forgets deleted objects.
 func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionResource) cache.ResourceEventHandler {
 	wantEvents := toSet(spec.Events)
 	handler := cache.ResourceEventHandlerDetailedFuncs{}
+	var tracker *conditionTracker
+	if spec.HasConditionFilter() && spec.Updates == profile.UpdatesConditions {
+		tracker = newConditionTracker(m, spec, gvr)
+		m.mu.Lock()
+		m.trackers = append(m.trackers, tracker)
+		m.mu.Unlock()
+	}
 	if wantEvents["add"] {
 		handler.AddFunc = func(obj any, isInInitialList bool) {
 			if isInInitialList && !spec.PitchInitialList {
@@ -113,18 +135,29 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 			if !ok1 || !ok2 || !eventPasses(spec, newU) {
 				return
 			}
+			if tracker != nil {
+				tracker.update(oldU, newU)
+				return
+			}
 			if ev, ok := updateEvent(spec.Updates, oldU, newU); ok {
 				m.pitch(spec, gvr, newU, ev)
 			}
 		}
 	}
-	if wantEvents["delete"] {
+	if wantEvents["delete"] || tracker != nil {
 		handler.DeleteFunc = func(obj any) {
 			// Handle DeletedFinalStateUnknown (tombstone)
 			if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 				obj = d.Obj
 			}
-			if u, ok := obj.(*unstructured.Unstructured); ok && eventPasses(spec, u) {
+			u, ok := obj.(*unstructured.Unstructured)
+			if !ok {
+				return
+			}
+			if tracker != nil {
+				tracker.forget(u)
+			}
+			if wantEvents["delete"] && eventPasses(spec, u) {
 				m.pitch(spec, gvr, u, pitcher.K8sEvent{EventType: "delete", Severity: spec.DeleteSeverity})
 			}
 		}
@@ -166,32 +199,16 @@ func updateEvent(mode string, oldU, newU *unstructured.Unstructured) (pitcher.K8
 		return ev, true
 	}
 	if mode == profile.UpdatesConditions {
-		var flips []string
-		rank := 0
+		var flips []flip
 		for _, t := range watchedConditions {
 			before, ok := condition(oldU, t)
 			after, ok2 := condition(newU, t)
-			if !ok || !ok2 || before.status == after.status {
-				continue
+			if ok && ok2 && before.status != after.status {
+				flips = append(flips, flip{t, after})
 			}
-			flip := t + "=" + after.status
-			if after.reason != "" {
-				flip += " (" + after.reason + ")"
-			}
-			flips = append(flips, flip)
-			r := 1 // success
-			switch {
-			case after.status == "False" && t == "Ready":
-				r = 3
-			case after.status != "True":
-				r = 2
-			}
-			rank = max(rank, r)
 		}
 		if len(flips) > 0 {
-			ev.Title = fmt.Sprintf("%s/%s %s", newU.GetKind(), newU.GetName(), strings.Join(flips, ", "))
-			ev.Severity = []string{"", "success", "warning", "error"}[rank]
-			return ev, true
+			return flipEvent(newU, flips), true
 		}
 	}
 	if oldU.GetGeneration() != newU.GetGeneration() {
@@ -234,6 +251,9 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	kind := u.GetKind()
 
 	text := summary.SummarizeText(kind, objMap)
+	if ev.Summary != "" {
+		text = ev.Summary + "\n" + text
+	}
 	if spec.IncludeObject {
 		if data, err := json.MarshalIndent(objMap, "", "  "); err == nil {
 			text += "\n" + string(data)
@@ -245,7 +265,7 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	ev.Name = u.GetName()
 	ev.Object = objMap
 	ev.Summary = text
-	ev.Timestamp = time.Now().UTC().Format(time.RFC3339)
+	ev.Timestamp = m.clock.Now().UTC().Format(time.RFC3339)
 	ev.Cluster = m.clusterName
 	ev.Key = m.cooldownKey(ev)
 

@@ -178,7 +178,7 @@ config.profileYaml: |
 
 ### Important events only (#87)
 
-Cooldown, rate limit and Event filters are profile fields, so they go into
+Cooldown, rate limit, Event and condition filters are profile fields, so they go into
 `config.profileYaml` (see `profiles/important-events.yaml`). Nodes and Events
 are in the default `watchedResources`; the Flux objects need RBAC:
 
@@ -209,8 +209,21 @@ config.profileYaml: |
       per: 10m
     informers:
       - { group: "", version: v1, resource: nodes, events: [update] }
-      - { group: kustomize.toolkit.fluxcd.io, version: v1, resource: kustomizations, events: [update] }
-      - { group: helm.toolkit.fluxcd.io, version: v2, resource: helmreleases, events: [update] }
+      # lasting failures only (#89)
+      - group: kustomize.toolkit.fluxcd.io
+        version: v1
+        resource: kustomizations
+        events: [update]
+        ignoreStatuses: [Unknown]
+        ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
+        minDuration: 5m
+      - group: helm.toolkit.fluxcd.io
+        version: v2
+        resource: helmreleases
+        events: [update]
+        ignoreStatuses: [Unknown]
+        ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
+        minDuration: 5m
       - group: ""
         version: v1
         resource: events

@@ -27,8 +27,16 @@ All configuration is done via a YAML profile. See `profiles/` for examples and t
 [README](https://github.com/stuttgart-things/homerun2-k8s-pitcher#configuration-profile) for all fields.
 
 `profiles/important-events.yaml` reports only what matters for a cluster:
-Node and Flux `Ready` flips and `Warning` Events with reasons such as
+Node `Ready` flips, lasting Flux failures and `Warning` Events with reasons such as
 `BackOff`, `OOMKilling` or `FailedMount`. Event informers take `types`,
 `reasons` and `excludeReasons`; `spec.cooldown` drops repeats of the same
 problem and `spec.rateLimit: {max, per}` caps all messages, replacing the
 excess with one `k8s-pitcher: N events suppressed` warning per window.
+
+Condition informers take `ignoreStatuses`, `ignoreReasons` and `minDuration`
+(#89): flips to an ignored state (Flux `Progressing`, `DependencyNotReady`)
+are not pitched, and a failure is pitched only once it has lasted
+`minDuration`, its recovery only if the failure was pitched. The preset uses
+them for Kustomizations and HelmReleases (`[Unknown]`, `[Progressing,
+DependencyNotReady, ReconciliationInProgress]`, `5m`). Images before the
+release with #89 (v1.3.x and older) ignore these fields and pitch every flip.

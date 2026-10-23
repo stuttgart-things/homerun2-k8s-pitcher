@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -69,6 +70,9 @@ func validate(p *K8sPitcherProfile) error {
 		if err := validateEventFilter(inf); err != nil {
 			return fmt.Errorf("spec.informers[%d]: %w", i, err)
 		}
+		if err := validateConditionFilter(inf); err != nil {
+			return fmt.Errorf("spec.informers[%d]: %w", i, err)
+		}
 	}
 	if p.Spec.Cooldown < 0 {
 		return fmt.Errorf("spec.cooldown must not be negative")
@@ -107,6 +111,30 @@ func validateEventFilter(inf InformerSpec) error {
 	for _, t := range inf.Types {
 		if t != "Normal" && t != "Warning" {
 			return fmt.Errorf("types must be Normal or Warning (got %q)", t)
+		}
+	}
+	return nil
+}
+
+// validateConditionFilter allows ignoreStatuses, ignoreReasons and
+// minDuration only on an informer with updates: conditions that watches
+// updates.
+func validateConditionFilter(inf InformerSpec) error {
+	if !inf.HasConditionFilter() {
+		return nil
+	}
+	if inf.Updates != "" && inf.Updates != UpdatesConditions {
+		return fmt.Errorf("ignoreStatuses, ignoreReasons and minDuration are only allowed with updates: conditions (got %q)", inf.Updates)
+	}
+	if !slices.Contains(inf.Events, "update") {
+		return fmt.Errorf("ignoreStatuses, ignoreReasons and minDuration need update in events")
+	}
+	if inf.MinDuration < 0 {
+		return fmt.Errorf("minDuration must not be negative")
+	}
+	for _, st := range inf.IgnoreStatuses {
+		if st != "False" && st != "Unknown" {
+			return fmt.Errorf("ignoreStatuses must be False or Unknown (got %q)", st)
 		}
 	}
 	return nil

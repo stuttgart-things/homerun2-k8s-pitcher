@@ -115,6 +115,20 @@ type InformerSpec struct {
 	Types          []string `yaml:"types"`
 	Reasons        []string `yaml:"reasons"`
 	ExcludeReasons []string `yaml:"excludeReasons"`
+	// IgnoreStatuses, IgnoreReasons and MinDuration filter condition flips
+	// (updates: conditions only, #89). A flip to an ignored status or
+	// reason is not pitched, and the next flip is compared against the last
+	// reported state. A failure (a condition that is not True) is pitched
+	// only once it has lasted MinDuration; its recovery only if the failure
+	// was pitched. Unset keeps the plain flip behaviour.
+	IgnoreStatuses []string      `yaml:"ignoreStatuses"`
+	IgnoreReasons  []string      `yaml:"ignoreReasons"`
+	MinDuration    time.Duration `yaml:"minDuration"`
+}
+
+// HasConditionFilter reports whether the informer filters condition flips.
+func (s InformerSpec) HasConditionFilter() bool {
+	return len(s.IgnoreStatuses) > 0 || len(s.IgnoreReasons) > 0 || s.MinDuration != 0
 }
 
 // HasEventFilter reports whether the informer filters Kubernetes Events.
