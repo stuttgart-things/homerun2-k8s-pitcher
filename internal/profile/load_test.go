@@ -419,6 +419,23 @@ func TestLoadImportantEventsProfile(t *testing.T) {
 	if events == nil {
 		t.Fatal("no events informer")
 	}
+	flux := 0
+	for _, inf := range p.Spec.Informers {
+		switch inf.Resource {
+		case "kustomizations", "helmreleases":
+			flux++
+			if inf.MinDuration != 5*time.Minute || len(inf.IgnoreStatuses) != 1 || len(inf.IgnoreReasons) != 3 {
+				t.Errorf("%s: condition filter = %v/%v/%v", inf.Resource, inf.IgnoreStatuses, inf.IgnoreReasons, inf.MinDuration)
+			}
+		case "nodes":
+			if inf.HasConditionFilter() {
+				t.Error("nodes must keep every flip")
+			}
+		}
+	}
+	if flux != 2 {
+		t.Errorf("flux informers = %d, want 2", flux)
+	}
 	if len(events.Types) != 1 || events.Types[0] != "Warning" {
 		t.Errorf("types = %v, want [Warning]", events.Types)
 	}
@@ -488,5 +505,48 @@ spec:
 `)
 	if _, err := Load(ok); err != nil {
 		t.Errorf("valid filter rejected: %v", err)
+	}
+}
+
+func TestLoadConditionFilter(t *testing.T) {
+	p, err := Load(writeTempFile(t, `
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - group: kustomize.toolkit.fluxcd.io
+      version: v1
+      resource: kustomizations
+      events: [update]
+      ignoreStatuses: [Unknown]
+      ignoreReasons: [Progressing, DependencyNotReady]
+      minDuration: 5m
+    - { version: v1, resource: nodes, events: [update] }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks := p.Spec.Informers[0]
+	if !ks.HasConditionFilter() || ks.MinDuration != 5*time.Minute ||
+		len(ks.IgnoreStatuses) != 1 || len(ks.IgnoreReasons) != 2 || ks.Updates != UpdatesConditions {
+		t.Errorf("condition filter not loaded: %+v", ks)
+	}
+	if p.Spec.Informers[1].HasConditionFilter() {
+		t.Error("unset condition filter must stay off")
+	}
+}
+
+func TestLoadConditionFilterErrors(t *testing.T) {
+	tests := map[string]string{
+		"updates generation": `{ version: v1, resource: x, events: [update], updates: generation, minDuration: 5m }`,
+		"updates all":        `{ version: v1, resource: x, events: [update], updates: all, ignoreReasons: [Progressing] }`,
+		"no update events":   `{ version: v1, resource: x, events: [add, delete], ignoreStatuses: [Unknown] }`,
+		"negative duration":  `{ version: v1, resource: x, events: [update], minDuration: -5m }`,
+		"ignore True":        `{ version: v1, resource: x, events: [update], ignoreStatuses: [True] }`,
+	}
+	for name, inf := range tests {
+		path := writeTempFile(t, "spec:\n  redis: { addr: r, stream: s }\n  informers:\n    - "+inf+"\n")
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
 	}
 }

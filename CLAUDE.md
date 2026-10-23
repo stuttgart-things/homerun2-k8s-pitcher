@@ -27,7 +27,7 @@ K8s API → informers (real-time add/update/delete)  → Redis Streams
 - `internal/profile/` — K8sPitcherProfile types and YAML loader
 - `internal/kube/` — K8s client init (kubeconfig + in-cluster), secret resolution
 - `internal/collector/` — periodic snapshot gatherers (Node, Pod, Event)
-- `internal/informer/` — dynamic informer manager (any GVR including CRDs)
+- `internal/informer/` — dynamic informer manager (any GVR including CRDs); `conditions.go` filters condition flips (ignoreStatuses, ignoreReasons, minDuration timers, injectable clock, #89)
 - `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
 - `internal/config/` — logging setup
 - `internal/throttle/` — cooldown and rate limit around the pitcher (#87)

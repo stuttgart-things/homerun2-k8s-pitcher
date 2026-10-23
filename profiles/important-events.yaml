@@ -1,5 +1,5 @@
-# Only events that matter for a cluster, never a flood (#87): failing nodes
-# and Flux objects, and Warning Events with a reason worth a message.
+# Only events that matter for a cluster, never a flood (#87): failing nodes,
+# lasting Flux failures (#89), and Warning Events with a reason worth a message.
 # FailedScheduling and Unhealthy (probes) stay out, they are too noisy.
 # No collectors, no inventory on restart (pitchInitialList: false).
 apiVersion: homerun2.sthings.io/v1alpha1
@@ -30,17 +30,29 @@ spec:
       resource: nodes
       events: [update]
       updates: conditions
-    # Flux: Ready flips
+    # Flux: only lasting failures (#89). Every new revision flips each
+    # Kustomization to Ready=Unknown (Progressing), often Ready=False
+    # (DependencyNotReady), and back within seconds: those flips are
+    # ignored. A failure is pitched once it has lasted 5 minutes (with how
+    # long it has been failing), its recovery only if the failure was
+    # pitched. Needs the k8s-pitcher release with #89; v1.3.x and older
+    # ignore these fields and pitch every flip.
     - group: kustomize.toolkit.fluxcd.io
       version: v1
       resource: kustomizations
       events: [update]
       updates: conditions
+      ignoreStatuses: [Unknown]
+      ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
+      minDuration: 5m
     - group: helm.toolkit.fluxcd.io
       version: v2
       resource: helmreleases
       events: [update]
       updates: conditions
+      ignoreStatuses: [Unknown]
+      ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
+      minDuration: 5m
     # Warning Events with an important reason
     - group: ""
       version: v1
