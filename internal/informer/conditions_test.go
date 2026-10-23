@@ -347,6 +347,27 @@ func TestConditionFilterGeneration(t *testing.T) {
 	}
 }
 
+// With updates: flips a generation change is not pitched; the flips still
+// go through the filter (#93).
+func TestConditionFilterFlipsMode(t *testing.T) {
+	spec := fluxSpec
+	spec.Updates = profile.UpdatesFlips
+	sim, mp, fc, _ := newSim(t, spec)
+	old := ks("app", "True", "")
+	upd := ks("app", "True", "")
+	upd.SetGeneration(2)
+	sim.h.OnUpdate(old, upd)
+	sim.last["app"] = upd
+	sim.set("app", "False", "BuildFailed")
+	if evs := mp.Events(); len(evs) != 0 {
+		t.Fatalf("generation change or early failure pitched: %+v", evs)
+	}
+	fc.advance(5 * time.Minute)
+	if evs := mp.Events(); len(evs) != 1 || evs[0].Title != "Kustomization/app Ready=False (BuildFailed)" {
+		t.Errorf("lasting failure: %+v", evs)
+	}
+}
+
 // pending reports the number of objects with a running timer (tests).
 func (t *conditionTracker) pending() int {
 	t.mu.Lock()

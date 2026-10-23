@@ -112,7 +112,7 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 	wantEvents := toSet(spec.Events)
 	handler := cache.ResourceEventHandlerDetailedFuncs{}
 	var tracker *conditionTracker
-	if spec.HasConditionFilter() && spec.Updates == profile.UpdatesConditions {
+	if spec.HasConditionFilter() && spec.WatchesFlips() {
 		tracker = newConditionTracker(m, spec, gvr)
 		m.mu.Lock()
 		m.trackers = append(m.trackers, tracker)
@@ -188,8 +188,8 @@ var watchedConditions = []string{"Ready", "Synced"}
 
 // updateEvent decides whether an update is pitched and how. all pitches
 // every update as before. generation pitches a metadata.generation change.
-// conditions pitches a generation change or a flip of Ready or Synced, the
-// latter titled e.g. "VirtualMachine/vm1 Ready=False (ReconcileError)" with
+// conditions pitches a generation change or a flip of Ready or Synced,
+// flips only the flip (#93), the latter titled e.g. "VirtualMachine/vm1 Ready=False (ReconcileError)" with
 // a severity from the transition: Ready to False is error, Synced to False or
 // either to Unknown warning, back to True success. A condition that appears
 // for the first time is not a flip.
@@ -198,7 +198,7 @@ func updateEvent(mode string, oldU, newU *unstructured.Unstructured) (pitcher.K8
 	if mode == profile.UpdatesAll {
 		return ev, true
 	}
-	if mode == profile.UpdatesConditions {
+	if mode == profile.UpdatesConditions || mode == profile.UpdatesFlips {
 		var flips []flip
 		for _, t := range watchedConditions {
 			before, ok := condition(oldU, t)
@@ -211,7 +211,7 @@ func updateEvent(mode string, oldU, newU *unstructured.Unstructured) (pitcher.K8
 			return flipEvent(newU, flips), true
 		}
 	}
-	if oldU.GetGeneration() != newU.GetGeneration() {
+	if mode != profile.UpdatesFlips && oldU.GetGeneration() != newU.GetGeneration() {
 		ev.Severity = "info"
 		return ev, true
 	}

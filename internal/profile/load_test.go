@@ -535,6 +535,24 @@ spec:
 	}
 }
 
+func TestLoadUpdatesFlips(t *testing.T) {
+	p, err := Load(writeTempFile(t, `
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - { version: v1, resource: nodes, events: [update], updates: flips }
+    - { version: v1, resource: x, events: [update], updates: flips, ignoreStatuses: [Unknown], minDuration: 5m }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, inf := range p.Spec.Informers {
+		if inf.Updates != UpdatesFlips || !inf.WatchesFlips() {
+			t.Errorf("informers[%d]: %+v", i, inf)
+		}
+	}
+}
+
 func TestLoadConditionFilterErrors(t *testing.T) {
 	tests := map[string]string{
 		"updates generation": `{ version: v1, resource: x, events: [update], updates: generation, minDuration: 5m }`,

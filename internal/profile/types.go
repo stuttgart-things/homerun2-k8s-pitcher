@@ -87,6 +87,9 @@ const (
 	// UpdatesConditions pitches a generation change or a flipped Ready or
 	// Synced condition (default).
 	UpdatesConditions = "conditions"
+	// UpdatesFlips pitches only a flipped Ready or Synced condition, no
+	// generation change (#93).
+	UpdatesFlips = "flips"
 	// UpdatesGeneration pitches only a metadata.generation change.
 	UpdatesGeneration = "generation"
 	// UpdatesAll pitches every update, status-only ones included.
@@ -129,6 +132,12 @@ type InformerSpec struct {
 // HasConditionFilter reports whether the informer filters condition flips.
 func (s InformerSpec) HasConditionFilter() bool {
 	return len(s.IgnoreStatuses) > 0 || len(s.IgnoreReasons) > 0 || s.MinDuration != 0
+}
+
+// WatchesFlips reports whether the informer pitches condition flips
+// (updates: conditions or flips).
+func (s InformerSpec) WatchesFlips() bool {
+	return s.Updates == UpdatesConditions || s.Updates == UpdatesFlips
 }
 
 // HasEventFilter reports whether the informer filters Kubernetes Events.

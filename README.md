@@ -115,19 +115,19 @@ should only report what matters.
 | Field | Default | |
 |---|---|---|
 | `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
-| `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
+| `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `flips`: only the flips, no generation change (#93) -- a spec change is the cluster repo's git log, not an event. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
 | `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
 | `includeObject` | `false` | Append the whole object as JSON to the summary. Off, the message body is the summary only. |
 | `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
 | `reasons` | *(all)* | `resource: events` only. Allowlist of Event reasons, e.g. `[BackOff, OOMKilling]`. |
 | `excludeReasons` | *(none)* | `resource: events` only. Denylist of Event reasons; mutually exclusive with `reasons`. |
-| `ignoreStatuses` | *(none)* | `updates: conditions` only. Flips to these statuses (`Unknown`, `False`) are not pitched. See [Lasting failures only](#lasting-failures-only). |
-| `ignoreReasons` | *(none)* | `updates: conditions` only. Flips to a condition with one of these reasons are not pitched. |
-| `minDuration` | `0` (off) | `updates: conditions` only. A failure is pitched once it has lasted this long, e.g. `5m`. |
+| `ignoreStatuses` | *(none)* | `updates: conditions` or `flips` only. Flips to these statuses (`Unknown`, `False`) are not pitched. See [Lasting failures only](#lasting-failures-only). |
+| `ignoreReasons` | *(none)* | `updates: conditions` or `flips` only. Flips to a condition with one of these reasons are not pitched. |
+| `minDuration` | `0` (off) | `updates: conditions` or `flips` only. A failure is pitched once it has lasted this long, e.g. `5m`. |
 
 A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
 `False` is `error`, `Synced` to `False` or either to `Unknown` `warning`, back
-to `True` `success`; a generation change is `info`. A condition that shows up
+to `True` `success`; a generation change is `info` (not with `updates: flips`). A condition that shows up
 for the first time is not a flip. Messages carry `system: k8s-<cluster>`, so
 scout and the AI pitcher can tell clusters apart.
 
@@ -154,7 +154,7 @@ informers:
     version: v1
     resource: kustomizations
     events: [update]
-    updates: conditions
+    updates: flips
     ignoreStatuses: [Unknown]
     ignoreReasons: [Progressing, DependencyNotReady, ReconciliationInProgress]
     minDuration: 5m
@@ -190,7 +190,9 @@ informers:
 | Object deleted while its failure is pending | nothing |
 
 All three fields are optional; without them every flip is pitched as before.
-They are only allowed with `updates: conditions` and `update` in `events`.
+They are only allowed with `updates: conditions` or `flips` and `update` in
+`events`. `updates: flips` needs the release with #93; older images reject
+the profile at start-up (`updates must be conditions, generation or all`).
 Images before the release with #89 (v1.3.x and older) ignore these fields:
 the profile is loaded with a plain `yaml.Unmarshal`, so unknown fields are
 dropped without an error, and every flip is pitched.

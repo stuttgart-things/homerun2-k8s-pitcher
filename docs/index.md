@@ -38,5 +38,6 @@ Condition informers take `ignoreStatuses`, `ignoreReasons` and `minDuration`
 are not pitched, and a failure is pitched only once it has lasted
 `minDuration`, its recovery only if the failure was pitched. The preset uses
 them for Kustomizations and HelmReleases (`[Unknown]`, `[Progressing,
-DependencyNotReady, ReconciliationInProgress]`, `5m`). Images before the
+DependencyNotReady, ReconciliationInProgress]`, `5m`) with `updates: flips`
+(#93), which pitches flips only and no spec (generation) changes. Images before the
 release with #89 (v1.3.x and older) ignore these fields and pitch every flip.

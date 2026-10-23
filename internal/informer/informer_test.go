@@ -214,6 +214,8 @@ func TestUpdateEvent(t *testing.T) {
 		{"status only", profile.UpdatesConditions, vm("vm1", 1, ready, synced), vm("vm1", 1, ready, synced), false, "", ""},
 		{"status only, all", profile.UpdatesAll, vm("vm1", 1, ready), vm("vm1", 1, ready), true, "", ""},
 		{"generation", profile.UpdatesConditions, vm("vm1", 1, ready), vm("vm1", 2, ready), true, "", "info"},
+		{"generation, flips", profile.UpdatesFlips, vm("vm1", 1, ready), vm("vm1", 2, ready), false, "", ""},
+		{"ready lost, flips", profile.UpdatesFlips, vm("vm1", 1, ready, synced), vm("vm1", 2, c("Ready", "False", "ReconcileError"), synced), true, "VsphereVM/vm1 Ready=False (ReconcileError)", "error"},
 		{"generation mode ignores flips", profile.UpdatesGeneration, vm("vm1", 1, ready), vm("vm1", 1, c("Ready", "False", "X")), false, "", ""},
 		{"ready lost", profile.UpdatesConditions, vm("vm1", 1, ready, synced), vm("vm1", 1, c("Ready", "False", "ReconcileError"), synced), true, "VsphereVM/vm1 Ready=False (ReconcileError)", "error"},
 		{"synced lost", profile.UpdatesConditions, vm("vm1", 1, ready, synced), vm("vm1", 1, ready, c("Synced", "False", "ReconcileError")), true, "VsphereVM/vm1 Synced=False (ReconcileError)", "warning"},
