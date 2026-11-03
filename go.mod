@@ -8,9 +8,9 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/stuttgart-things/homerun-library/v4 v4.5.2
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 )
 
 require (
