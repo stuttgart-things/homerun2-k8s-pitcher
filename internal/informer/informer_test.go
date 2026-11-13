@@ -175,9 +175,108 @@ func TestPitchEventFields(t *testing.T) {
 		t.Errorf("summary must not contain the object without includeObject: %q", e.Summary)
 	}
 
+	if e.Payload != nil {
+		t.Errorf("payload without includeObject: %v", e.Payload)
+	}
+
+	// includeObject: the object goes along as payload, the summary stays text.
 	mgr.pitch(profile.InformerSpec{IncludeObject: true}, gvr, u, pitcher.K8sEvent{EventType: "delete"})
-	if e := mp.Events()[1]; !strings.Contains(e.Summary, `"nodeName": "node-1"`) {
-		t.Errorf("includeObject: object missing in summary: %q", e.Summary)
+	e = mp.Events()[1]
+	if got, _, _ := unstructured.NestedString(e.Payload, "spec", "nodeName"); got != "node-1" {
+		t.Errorf("includeObject: payload spec.nodeName = %q, want node-1", got)
+	}
+	if strings.Contains(e.Summary, "nodeName") {
+		t.Errorf("includeObject: object must not be appended to the summary: %q", e.Summary)
+	}
+}
+
+func TestPayloadOf(t *testing.T) {
+	obj := map[string]any{
+		"kind": "Pod",
+		"metadata": map[string]any{
+			"name":          "p",
+			"managedFields": []any{map[string]any{"manager": "kubectl"}},
+			"annotations": map[string]any{
+				lastApplied: "{...}",
+				"keep":      "me",
+			},
+		},
+	}
+	got := payloadOf(obj)
+
+	meta := got["metadata"].(map[string]any)
+	if _, ok := meta["managedFields"]; ok {
+		t.Error("managedFields not stripped")
+	}
+	ann := meta["annotations"].(map[string]any)
+	if _, ok := ann[lastApplied]; ok || ann["keep"] != "me" {
+		t.Errorf("annotations = %v", ann)
+	}
+	if meta["name"] != "p" || got["kind"] != "Pod" {
+		t.Errorf("payload lost fields: %v", got)
+	}
+
+	// The informer's object (and its cache) must stay untouched.
+	orig := obj["metadata"].(map[string]any)
+	if _, ok := orig["managedFields"]; !ok {
+		t.Error("payloadOf modified the object's metadata")
+	}
+	if _, ok := orig["annotations"].(map[string]any)[lastApplied]; !ok {
+		t.Error("payloadOf modified the object's annotations")
+	}
+
+	// Only the last-applied annotation: no empty annotations map remains.
+	only := payloadOf(map[string]any{"metadata": map[string]any{"annotations": map[string]any{lastApplied: "x"}}})
+	if _, ok := only["metadata"].(map[string]any)["annotations"]; ok {
+		t.Error("empty annotations kept")
+	}
+}
+
+func k8sgptResult(errs ...string) *unstructured.Unstructured {
+	var es []any
+	for _, e := range errs {
+		es = append(es, map[string]any{"text": e})
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "core.k8sgpt.ai/v1alpha1",
+		"kind":       "Result",
+		"metadata":   map[string]any{"name": "pod-defaultweb0", "namespace": "k8sgpt", "generation": int64(1)},
+		"spec": map[string]any{
+			"kind": "Pod", "name": "default/web-0", "parentObject": "StatefulSet/web",
+			"error": es,
+		},
+	}}
+}
+
+// A K8sGPT Result is pitched as a finding about the object it names: added
+// or changed a warning, deleted resolved, unless deleteSeverity says else.
+func TestK8sGPTResultEvents(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+	for _, tc := range []struct {
+		name      string
+		spec      profile.InformerSpec
+		ev        pitcher.K8sEvent
+		wantTitle string
+		wantSev   string
+	}{
+		{"add", profile.InformerSpec{}, pitcher.K8sEvent{EventType: "add"}, "Pod default/web-0: 2 findings", "warning"},
+		{"update", profile.InformerSpec{}, pitcher.K8sEvent{EventType: "update", Severity: "info"}, "Pod default/web-0: 2 findings", "warning"},
+		{"delete", profile.InformerSpec{}, pitcher.K8sEvent{EventType: "delete"}, "Pod default/web-0: resolved", "success"},
+		{"delete with deleteSeverity", profile.InformerSpec{DeleteSeverity: "info"}, pitcher.K8sEvent{EventType: "delete", Severity: "info"}, "Pod default/web-0: resolved", "info"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mp := &mockPitcher{}
+			mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c")
+			mgr.pitch(tc.spec, gvr, k8sgptResult("Back-off restarting failed container", "readiness probe failed"), tc.ev)
+
+			e := mp.Events()[0]
+			if e.Title != tc.wantTitle || e.Severity != tc.wantSev {
+				t.Errorf("title %q severity %q, want %q %q", e.Title, e.Severity, tc.wantTitle, tc.wantSev)
+			}
+			if !strings.Contains(e.Summary, "  - readiness probe failed") {
+				t.Errorf("summary lacks the error texts: %q", e.Summary)
+			}
+		})
 	}
 }
 

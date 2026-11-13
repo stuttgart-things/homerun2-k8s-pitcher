@@ -568,3 +568,20 @@ func TestLoadConditionFilterErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadK8sGPTResultsProfile(t *testing.T) {
+	p, err := Load("../../profiles/k8sgpt-results.yaml")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(p.Spec.Informers) != 1 {
+		t.Fatalf("informers = %d, want 1", len(p.Spec.Informers))
+	}
+	inf := p.Spec.Informers[0]
+	if inf.Group != "core.k8sgpt.ai" || inf.Resource != "results" || inf.Updates != UpdatesGeneration || !inf.IncludeObject || inf.PitchInitialList {
+		t.Errorf("informer = %+v", inf)
+	}
+	if len(inf.Events) != 3 {
+		t.Errorf("events = %v, want add, update, delete", inf.Events)
+	}
+}

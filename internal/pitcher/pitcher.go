@@ -29,6 +29,9 @@ type K8sEvent struct {
 	Namespace string         `json:"namespace"`
 	Name      string         `json:"name"`
 	Object    map[string]any `json:"object"`
+	// Payload goes along as the message's structured payload (includeObject),
+	// stored as nested JSON in Redis instead of text in the message body.
+	Payload   map[string]any `json:"payload,omitempty"`
 	Summary   string         `json:"summary,omitempty"`   // human-readable text summary
 	Title     string         `json:"title,omitempty"`     // overrides "<kind>/<name> <eventType>"
 	Severity  string         `json:"severity,omitempty"`  // override severity (e.g. from Flux events)
@@ -146,7 +149,7 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 		}
 	}
 
-	return homerun.Message{
+	msg := homerun.Message{
 		Title:     title,
 		Message:   message,
 		Severity:  sev,
@@ -154,7 +157,16 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 		Timestamp: event.Timestamp,
 		System:    sys,
 		Tags:      tags,
-	}, nil
+	}
+	if event.Payload != nil {
+		// A payload above the library limit is dropped, not the message: the
+		// event still reaches every catcher, only without the object.
+		if err := msg.SetPayload(event.Payload); err != nil {
+			slog.Warn("payload dropped",
+				"kind", event.Kind, "namespace", event.Namespace, "name", event.Name, "error", err)
+		}
+	}
+	return msg, nil
 }
 
 // eventSeverity is the severity of a Kubernetes Event from its own type

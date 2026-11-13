@@ -235,7 +235,7 @@ func condition(u *unstructured.Unstructured, typ string) (cond, bool) {
 }
 
 // pitch completes ev from the object and pitches it. The body is the
-// summary, plus the whole object as JSON with includeObject.
+// summary; with includeObject the object goes along as the message payload.
 func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResource, u *unstructured.Unstructured, ev pitcher.K8sEvent) {
 	eventType := ev.EventType
 	objMap, err := toMap(u.Object)
@@ -255,8 +255,13 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 		text = ev.Summary + "\n" + text
 	}
 	if spec.IncludeObject {
-		if data, err := json.MarshalIndent(objMap, "", "  "); err == nil {
-			text += "\n" + string(data)
+		ev.Payload = payloadOf(objMap)
+	}
+	if h, ok := summary.Headline(kind, objMap, ev.EventType); ok && ev.Title == "" {
+		ev.Title = h.Title
+		// An explicit deleteSeverity still wins for deletes.
+		if ev.EventType != "delete" || spec.DeleteSeverity == "" {
+			ev.Severity = h.Severity
 		}
 	}
 
@@ -295,6 +300,45 @@ func (m *Manager) cooldownKey(ev pitcher.K8sEvent) string {
 	}
 	return ""
 }
+
+// payloadOf returns obj without the fields that only bloat a payload: the
+// server-side apply bookkeeping in metadata.managedFields and the client-side
+// copy in the last-applied-configuration annotation. obj is not modified.
+func payloadOf(obj map[string]any) map[string]any {
+	out := make(map[string]any, len(obj))
+	for k, v := range obj {
+		out[k] = v
+	}
+	meta, ok := obj["metadata"].(map[string]any)
+	if !ok {
+		return out
+	}
+	m := make(map[string]any, len(meta))
+	for k, v := range meta {
+		if k != "managedFields" {
+			m[k] = v
+		}
+	}
+	if ann, ok := meta["annotations"].(map[string]any); ok {
+		if _, has := ann[lastApplied]; has {
+			a := make(map[string]any, len(ann))
+			for k, v := range ann {
+				if k != lastApplied {
+					a[k] = v
+				}
+			}
+			if len(a) > 0 {
+				m["annotations"] = a
+			} else {
+				delete(m, "annotations")
+			}
+		}
+	}
+	out["metadata"] = m
+	return out
+}
+
+const lastApplied = "kubectl.kubernetes.io/last-applied-configuration"
 
 func toMap(obj any) (map[string]any, error) {
 	data, err := json.Marshal(obj)

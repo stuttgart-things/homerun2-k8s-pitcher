@@ -1,0 +1,37 @@
+# K8sGPT findings as homerun messages (#99). The K8sGPT operator runs with
+# ai.enabled: false and writes one Result CR per finding into its namespace;
+# its own sinks would only send the (empty) AI text.
+#
+#   add     new finding           "Pod default/web-0: 2 findings"   warning
+#   update  finding changed       (spec replaced, generation bumps)  warning
+#   delete  no longer reported    "Pod default/web-0: resolved"      success
+#
+# Unchanged Results are only re-stamped in their status (lifecycle:
+# historical) on every scan; updates: generation drops those. The Result goes
+# along as the message payload (includeObject), so an archive (e.g.
+# homerun2-s3-catcher) gets spec.error[] as JSON.
+#
+# Note: deleting the K8sGPT CR garbage-collects all its Results, which is
+# pitched as one "resolved" per finding.
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: k8sgpt-results
+spec:
+  cluster: my-cluster            # in-cluster there is no kubeconfig context
+  pitcher:
+    addr: https://omni.example.com/pitch   # omni-pitcher needs homerun-library >= v4.6.0 to keep the payload
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: omni-pitcher-token
+        namespace: homerun2
+        key: auth-token
+  informers:
+    - group: core.k8sgpt.ai
+      version: v1alpha1
+      resource: results
+      namespace: k8sgpt-operator-system   # namespace of the K8sGPT CR
+      events: [add, update, delete]
+      updates: generation
+      includeObject: true

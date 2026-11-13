@@ -110,7 +110,8 @@ type InformerSpec struct {
 	// DeleteSeverity overrides the severity of deletes (default WARNING),
 	// e.g. info for claims that are deleted on purpose.
 	DeleteSeverity string `yaml:"deleteSeverity"`
-	// IncludeObject appends the whole object as JSON to the summary.
+	// IncludeObject sends the object along as the message payload (nested
+	// JSON in the Redis document, without metadata.managedFields).
 	IncludeObject bool `yaml:"includeObject"`
 	// Types, Reasons and ExcludeReasons filter Kubernetes Events (resource
 	// events only): Types by type (Normal, Warning), Reasons as an allowlist

@@ -16,6 +16,11 @@ func SummarizeText(kind string, obj map[string]any) string {
 		return textEvent(obj)
 	case "Deployment":
 		return textDeployment(obj)
+	case "Result":
+		if isK8sGPTResult(kind, obj) {
+			return textK8sGPTResult(obj)
+		}
+		return textGeneric(kind, obj)
 	default:
 		return textGeneric(kind, obj)
 	}
