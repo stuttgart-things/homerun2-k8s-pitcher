@@ -108,7 +108,8 @@ spec:
 
 See `profiles/` for complete examples, `profiles/crossplane-inventory.yaml` for
 VM and cluster claims, `profiles/important-events.yaml` for a cluster that
-should only report what matters.
+should only report what matters, `profiles/k8sgpt-results.yaml` for K8sGPT
+findings.
 
 ### Informer options
 
@@ -117,7 +118,7 @@ should only report what matters.
 | `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
 | `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `flips`: only the flips, no generation change (#93) -- a spec change is the cluster repo's git log, not an event. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
 | `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
-| `includeObject` | `false` | Append the whole object as JSON to the summary. Off, the message body is the summary only. |
+| `includeObject` | `false` | Send the object along as the message `payload`: nested JSON in the Redis document, without `metadata.managedFields` and the `last-applied-configuration` annotation (#99). The message body stays the summary. Up to 256 KiB; a larger object is dropped from the message with a warning. Over HTTP the omni-pitcher needs homerun-library ≥ v4.6.0 to keep it. |
 | `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
 | `reasons` | *(all)* | `resource: events` only. Allowlist of Event reasons, e.g. `[BackOff, OOMKilling]`. |
 | `excludeReasons` | *(none)* | `resource: events` only. Denylist of Event reasons; mutually exclusive with `reasons`. |
@@ -140,6 +141,38 @@ deletion is TTL expiry and pitched as `info` unless `deleteSeverity` is set
 reason and involved object, `BackOff: Pod shop/api-7d9` (`NodeNotReady: Node
 worker-1` when cluster-scoped), and its reason is appended to the tags:
 `k8s,Event,add,shop,BackOff` (#87).
+
+### K8sGPT findings
+
+[K8sGPT](https://github.com/k8sgpt-ai/k8sgpt-operator) in operator mode with
+`ai.enabled: false` writes one `Result` CR (`core.k8sgpt.ai/v1alpha1`) per
+finding. An informer on `results` turns them into findings (#99):
+
+| Event | Meaning | Title | Severity |
+|---|---|---|---|
+| `add` | new finding | `Pod default/web-0: 2 findings` | `warning` |
+| `update` | finding changed | the same | `warning` |
+| `delete` | no longer reported | `Pod default/web-0: resolved` | `success` (or `deleteSeverity`) |
+
+The body lists the parent object and every error text. Use `updates:
+generation`: the operator re-stamps unchanged Results in their status on every
+scan, and only a changed finding bumps the generation. With `includeObject`,
+the Result goes along as the payload, so an archive gets `spec.error[]` as
+JSON. See `profiles/k8sgpt-results.yaml`.
+
+```yaml
+apiVersion: core.k8sgpt.ai/v1alpha1
+kind: K8sGPT
+metadata:
+  name: scan
+  namespace: k8sgpt-operator-system
+spec:
+  ai:
+    enabled: false
+  analysis:
+    interval: 5m
+  noCache: true
+```
 
 ### Lasting failures only
 

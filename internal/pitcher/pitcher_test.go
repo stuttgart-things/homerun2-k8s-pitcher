@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	homerun "github.com/stuttgart-things/homerun-library/v4"
+
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 )
 
@@ -362,6 +364,31 @@ func TestToMessage(t *testing.T) {
 	ev.Subsystem = ""
 	if msg, _ = toMessage(ev, "labda", ""); msg.System != "kubernetes" {
 		t.Errorf("system fallback = %q", msg.System)
+	}
+}
+
+// The event's payload becomes the message's structured payload; one above the
+// library limit is dropped, the message still goes out.
+func TestToMessage_Payload(t *testing.T) {
+	ev := K8sEvent{Kind: "Result", Name: "r", EventType: "add", Summary: "s",
+		Payload: map[string]any{"spec": map[string]any{"kind": "Pod"}}}
+	msg, err := toMessage(ev, "labda", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Payload != `{"spec":{"kind":"Pod"}}` {
+		t.Errorf("payload = %s", msg.Payload)
+	}
+
+	ev.Payload = nil
+	if msg, _ = toMessage(ev, "labda", ""); msg.Payload != "" {
+		t.Errorf("payload without event payload: %s", msg.Payload)
+	}
+
+	ev.Payload = map[string]any{"big": strings.Repeat("x", homerun.MaxPayloadSize)}
+	msg, err = toMessage(ev, "labda", "")
+	if err != nil || msg.Payload != "" || msg.Title == "" {
+		t.Errorf("oversized payload: err %v, payload %d bytes, title %q", err, len(msg.Payload), msg.Title)
 	}
 }
 
