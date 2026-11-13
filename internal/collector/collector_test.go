@@ -11,11 +11,13 @@ import (
 
 	homerun "github.com/stuttgart-things/homerun-library/v4"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
@@ -387,5 +389,26 @@ func TestSnapshotFitsLimit(t *testing.T) {
 	}
 	if p["truncated"] == true {
 		t.Error("120 small specs should fit after trimming, not be cut")
+	}
+}
+
+// A resource the cluster does not serve is no error and pitches nothing
+// (#106); the snapshot carries the collector's system.
+func TestCollectorUnservedAndSystem(t *testing.T) {
+	c, mp, spec := snapshotCollector()
+	c.client.(*dynamicfake.FakeDynamicClient).PrependReactor("list", "results", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewNotFound(resultsGVR.GroupResource(), "")
+	})
+	gvr, _ := gvrFor(spec)
+	c.collect(context.Background(), spec, gvr)
+	if n := len(mp.Events()); n != 0 {
+		t.Errorf("pitched %d for an unserved resource", n)
+	}
+
+	c2, mp2, spec2 := snapshotCollector(k8sgptResult("a", "e"))
+	spec2.System = "k8sgpt-labda"
+	c2.collect(context.Background(), spec2, gvr)
+	if s := mp2.Events()[0].Subsystem; s != "k8sgpt-labda" {
+		t.Errorf("subsystem %q", s)
 	}
 }

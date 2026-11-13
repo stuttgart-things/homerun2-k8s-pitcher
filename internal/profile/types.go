@@ -90,6 +90,8 @@ type CollectorSpec struct {
 	Mode string `yaml:"mode"`
 	// Throttle false bypasses spec.cooldown and spec.rateLimit (#102).
 	Throttle *bool `yaml:"throttle"`
+	// System overrides spec.system for this collector's messages (#106).
+	System string `yaml:"system"`
 }
 
 // Collector modes.
@@ -130,6 +132,10 @@ type InformerSpec struct {
 	// DeleteSeverity overrides the severity of deletes (default WARNING),
 	// e.g. info for claims that are deleted on purpose.
 	DeleteSeverity string `yaml:"deleteSeverity"`
+	// System overrides spec.system for this informer's messages (#106), e.g.
+	// k8sgpt-<cluster> for findings the central omni-pitcher routes to the
+	// archive while the profile's other informers keep k8s-<cluster>.
+	System string `yaml:"system"`
 	// Throttle false bypasses spec.cooldown and spec.rateLimit for this
 	// informer (#102): for archive-only data, where a dropped event is lost
 	// data, not a quieter channel. Default true.

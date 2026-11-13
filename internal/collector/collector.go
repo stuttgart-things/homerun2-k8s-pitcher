@@ -10,6 +10,7 @@ import (
 	"time"
 
 	homerun "github.com/stuttgart-things/homerun-library/v4"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -106,6 +107,12 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 	ns := profile.ResolveNamespace(spec.Namespace)
 
 	list, err := c.client.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{})
+	if apierrors.IsNotFound(err) {
+		// Not served (yet), e.g. a CRD that is not installed: no error in
+		// every interval, the next run tries again (#106).
+		slog.Debug("collector resource not served", "resource", gvr.Resource)
+		return
+	}
 	if err != nil {
 		slog.Error("collector list failed",
 			"kind", spec.Kind,
@@ -143,6 +150,7 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 			Summary:     summary.SummarizeText(spec.Kind, obj),
 			Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			Cluster:     c.clusterName,
+			Subsystem:   spec.System,
 			Unthrottled: !spec.Throttled(),
 		}
 
@@ -204,6 +212,7 @@ func (c *Collector) pitchSnapshot(spec profile.CollectorSpec, gvr schema.GroupVe
 		Payload:     payload,
 		Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		Cluster:     c.clusterName,
+		Subsystem:   spec.System,
 		Unthrottled: !spec.Throttled(),
 	}
 	if err := c.pitcher.Pitch(event); err != nil {

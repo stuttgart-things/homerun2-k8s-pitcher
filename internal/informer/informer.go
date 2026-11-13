@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -46,51 +48,16 @@ func New(client dynamic.Interface, p pitcher.K8sPitcher, specs []profile.Informe
 	}
 }
 
-// Start sets up dynamic informers for each spec and blocks until ctx is cancelled.
+// servedRetry is how often an informer on a resource the cluster does not
+// serve (yet) checks again; tests shorten it.
+var servedRetry = 10 * time.Minute
+
+// Start sets up dynamic informers for each spec and blocks until ctx is
+// cancelled. An informer on a resource the cluster does not serve, such as a
+// CRD that is not installed, waits for it instead of failing in a loop (#106).
 func (m *Manager) Start(ctx context.Context) {
 	for _, spec := range m.specs {
-		gvr := schema.GroupVersionResource{
-			Group:    spec.Group,
-			Version:  spec.Version,
-			Resource: spec.Resource,
-		}
-
-		ns := profile.ResolveNamespace(spec.Namespace)
-
-		factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-			m.client,
-			defaultResync,
-			ns,
-			nil,
-		)
-
-		informer := factory.ForResource(gvr).Informer()
-
-		if _, err := informer.AddEventHandler(m.handlerFor(spec, gvr)); err != nil {
-			slog.Error("failed to add event handler",
-				"resource", gvr.Resource,
-				"error", err,
-			)
-			continue
-		}
-
-		slog.Info("informer started",
-			"group", spec.Group,
-			"version", spec.Version,
-			"resource", spec.Resource,
-			"namespace", spec.Namespace,
-			"events", spec.Events,
-			"updates", spec.Updates,
-			"pitchInitialList", spec.PitchInitialList,
-			"types", spec.Types,
-			"reasons", spec.Reasons,
-			"excludeReasons", spec.ExcludeReasons,
-			"ignoreStatuses", spec.IgnoreStatuses,
-			"ignoreReasons", spec.IgnoreReasons,
-			"minDuration", spec.MinDuration,
-		)
-
-		go informer.Run(ctx.Done())
+		go m.startWhenServed(ctx, spec)
 	}
 
 	// Block until context is cancelled
@@ -101,6 +68,73 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 	m.mu.Unlock()
 	slog.Info("informer manager stopped")
+}
+
+// startWhenServed starts the informer of spec once its resource is served.
+// Only NotFound waits; any other error (RBAC, network) starts the informer as
+// before, whose reflector then reports and retries it.
+func (m *Manager) startWhenServed(ctx context.Context, spec profile.InformerSpec) {
+	gvr := schema.GroupVersionResource{Group: spec.Group, Version: spec.Version, Resource: spec.Resource}
+	ns := profile.ResolveNamespace(spec.Namespace)
+	logged := false
+	for {
+		_, err := m.client.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 1})
+		if !apierrors.IsNotFound(err) {
+			break
+		}
+		if !logged {
+			slog.Info("resource not served, informer waits for it",
+				"group", spec.Group, "version", spec.Version, "resource", spec.Resource,
+				"retry", servedRetry.String())
+			logged = true
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(servedRetry):
+		}
+	}
+	m.startInformer(ctx, spec, gvr, ns)
+}
+
+// startInformer runs one informer until ctx is done.
+func (m *Manager) startInformer(ctx context.Context, spec profile.InformerSpec, gvr schema.GroupVersionResource, ns string) {
+
+	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
+		m.client,
+		defaultResync,
+		ns,
+		nil,
+	)
+
+	informer := factory.ForResource(gvr).Informer()
+
+	if _, err := informer.AddEventHandler(m.handlerFor(spec, gvr)); err != nil {
+		slog.Error("failed to add event handler",
+			"resource", gvr.Resource,
+			"error", err,
+		)
+		return
+	}
+
+	slog.Info("informer started",
+		"group", spec.Group,
+		"version", spec.Version,
+		"resource", spec.Resource,
+		"namespace", spec.Namespace,
+		"events", spec.Events,
+		"updates", spec.Updates,
+		"pitchInitialList", spec.PitchInitialList,
+		"types", spec.Types,
+		"reasons", spec.Reasons,
+		"excludeReasons", spec.ExcludeReasons,
+		"ignoreStatuses", spec.IgnoreStatuses,
+		"ignoreReasons", spec.IgnoreReasons,
+		"minDuration", spec.MinDuration,
+		"system", spec.System,
+	)
+
+	go informer.Run(ctx.Done())
 }
 
 // handlerFor builds the event handler of one informer. Adds from the initial
@@ -273,6 +307,9 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	ev.Timestamp = m.clock.Now().UTC().Format(time.RFC3339)
 	ev.Cluster = m.clusterName
 	ev.Unthrottled = !spec.Throttled()
+	if spec.System != "" {
+		ev.Subsystem = spec.System
+	}
 	if fp, ok := summary.Fingerprint(m.clusterName, kind, objMap); ok {
 		ev.Fingerprint = fp
 	}

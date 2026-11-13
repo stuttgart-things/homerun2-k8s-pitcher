@@ -18,6 +18,9 @@ import (
 
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	k8stesting "k8s.io/client-go/testing"
+	"sync/atomic"
 )
 
 type mockPitcher struct {
@@ -524,5 +527,64 @@ func TestInformerFingerprint(t *testing.T) {
 	}}, pitcher.K8sEvent{EventType: "add"})
 	if fp := mp.Events()[1].Fingerprint; fp != "" {
 		t.Errorf("pod fingerprint %q", fp)
+	}
+}
+
+// An informer on a resource the cluster does not serve waits, and starts once
+// it is served (#106): here the first two checks get NotFound, then a Result
+// created afterwards is pitched.
+func TestInformerWaitsForUnservedResource(t *testing.T) {
+	old := servedRetry
+	servedRetry = 10 * time.Millisecond
+	defer func() { servedRetry = old }()
+
+	gvr := schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{gvr: "ResultList"})
+	var lists atomic.Int32
+	client.PrependReactor("list", "results", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if lists.Add(1) <= 2 {
+			return true, nil, apierrors.NewNotFound(gvr.GroupResource(), "")
+		}
+		return false, nil, nil
+	})
+
+	mp := &mockPitcher{}
+	spec := profile.InformerSpec{Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource,
+		Namespace: "k8sgpt", Events: []string{"add"}, System: "k8sgpt-c"}
+	mgr := New(client, mp, []profile.InformerSpec{spec}, "c")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.Start(ctx)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for lists.Load() < 4 && time.Now().Before(deadline) { // 2 NotFound, the served check, the informer's list
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // let the informer sync
+	if _, err := client.Resource(gvr).Namespace("k8sgpt").Create(ctx, k8sgptResult("new"), metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for len(mp.Events()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	events := mp.Events()
+	if len(events) != 1 {
+		t.Fatalf("pitched %d events after the resource became served, want 1", len(events))
+	}
+	if events[0].Subsystem != "k8sgpt-c" {
+		t.Errorf("subsystem %q, want the informer's system", events[0].Subsystem)
+	}
+}
+
+func TestInformerSystem(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+	mp := &mockPitcher{}
+	mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c")
+	mgr.pitch(profile.InformerSpec{System: "k8sgpt-c"}, gvr, k8sgptResult("x"), pitcher.K8sEvent{EventType: "add"})
+	mgr.pitch(profile.InformerSpec{}, gvr, k8sgptResult("x"), pitcher.K8sEvent{EventType: "add"})
+	e := mp.Events()
+	if e[0].Subsystem != "k8sgpt-c" || e[1].Subsystem != "" {
+		t.Errorf("subsystems %q %q", e[0].Subsystem, e[1].Subsystem)
 	}
 }
