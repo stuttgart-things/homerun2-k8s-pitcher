@@ -121,6 +121,7 @@ findings.
 | `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
 | `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `flips`: only the flips, no generation change (#93) -- a spec change is the cluster repo's git log, not an event. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
 | `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
+| `system` | `spec.system` | The message system of this informer only (also on collectors, #106), e.g. `k8sgpt-<cluster>` for findings the central omni-pitcher routes to the archive while the other informers keep `k8s-<cluster>`. |
 | `throttle` | `true` | `false` bypasses `spec.cooldown` and `spec.rateLimit` for this informer (also on collectors, #102): for archive-only data such as K8sGPT findings, where a dropped event is missing data rather than a quieter channel. Unthrottled events do not count toward the rate-limit window. |
 | `includeObject` | `false` | Send the object along as the message `payload`: nested JSON in the Redis document, without `metadata.managedFields` and the `last-applied-configuration` annotation (#99). The message body stays the summary. Up to 256 KiB; a larger object is dropped from the message with a warning. Over HTTP the omni-pitcher needs homerun-library ≥ v4.6.0 to keep it. |
 | `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
@@ -163,6 +164,11 @@ generation`: the operator re-stamps unchanged Results in their status on every
 scan, and only a changed finding bumps the generation. With `includeObject`,
 the Result goes along as the payload, so an archive gets `spec.error[]` as
 JSON. See `profiles/k8sgpt-results.yaml`.
+
+**Not installed yet.** An informer on a resource the cluster does not serve
+(no K8sGPT CRDs) logs once and checks again every 10 minutes; it starts when
+the CRD appears. A collector skips such a run without an error (#106). So one
+profile can carry the K8sGPT part on every cluster.
 
 **Fingerprint.** Every Result event carries the tag `fp=<16 hex>`: a hash of
 cluster, object and sorted error texts. The same problem on the same object
