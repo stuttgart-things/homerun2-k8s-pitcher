@@ -35,3 +35,6 @@ spec:
       events: [add, update, delete]
       updates: generation
       includeObject: true
+      # Archive data: bypass spec.cooldown/spec.rateLimit if a profile sets
+      # them, a dropped finding would be missing in the archive (#102).
+      throttle: false

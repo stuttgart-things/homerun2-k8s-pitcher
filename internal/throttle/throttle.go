@@ -64,7 +64,9 @@ func (p *Pitcher) Pitch(event pitcher.K8sEvent) error {
 	p.mu.Lock()
 	now := p.now()
 	summary := p.closeWindow(now)
-	pass := p.admit(&event, now)
+	// An unthrottled event neither waits for nor counts toward the window,
+	// and starts no cooldown (#102).
+	pass := event.Unthrottled || p.admit(&event, now)
 	p.mu.Unlock()
 
 	if summary != nil {
