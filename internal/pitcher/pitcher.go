@@ -38,6 +38,10 @@ type K8sEvent struct {
 	Subsystem string         `json:"subsystem,omitempty"` // source subsystem (e.g. "flux", "kubernetes")
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
+	// Unthrottled events bypass cooldown and rate limit (throttle: false on
+	// the informer or collector, #102): archive-only data such as K8sGPT
+	// findings must not be dropped.
+	Unthrottled bool `json:"-"`
 	// Key groups repeats of the same problem for the cooldown; empty is
 	// never deduplicated.
 	Key string `json:"-"`

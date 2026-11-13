@@ -118,6 +118,7 @@ findings.
 | `pitchInitialList` | `false` | Pitch the objects listed at start-up as `add`. Off, a restart does not re-pitch the inventory. |
 | `updates` | `conditions` | `conditions`: a `metadata.generation` change or a flip of the `Ready` or `Synced` condition. `flips`: only the flips, no generation change (#93) -- a spec change is the cluster repo's git log, not an event. `generation`: only generation changes. `all`: every update, status-only ones included (the old behaviour). |
 | `deleteSeverity` | `WARNING` (`info` for `Event`) | e.g. `info` for claims that are deleted on purpose |
+| `throttle` | `true` | `false` bypasses `spec.cooldown` and `spec.rateLimit` for this informer (also on collectors, #102): for archive-only data such as K8sGPT findings, where a dropped event is missing data rather than a quieter channel. Unthrottled events do not count toward the rate-limit window. |
 | `includeObject` | `false` | Send the object along as the message `payload`: nested JSON in the Redis document, without `metadata.managedFields` and the `last-applied-configuration` annotation (#99). The message body stays the summary. Up to 256 KiB; a larger object is dropped from the message with a warning. Over HTTP the omni-pitcher needs homerun-library ≥ v4.6.0 to keep it. |
 | `types` | *(all)* | `resource: events` only. Kubernetes Event types to pitch: `Normal`, `Warning`. |
 | `reasons` | *(all)* | `resource: events` only. Allowlist of Event reasons, e.g. `[BackOff, OOMKilling]`. |
@@ -252,6 +253,9 @@ spec:
 - `rateLimit`: messages above `max` per `per` are dropped. Once the window is
   over, a single `k8s-pitcher: <n> events suppressed` (`warning`) is pitched
   instead.
+- Exception: an informer or collector with `throttle: false` bypasses both,
+  and its events do not count toward the window (#102). Meant for data that
+  goes only to an archive, such as K8sGPT findings.
 
 ## Flux Notification Webhook
 

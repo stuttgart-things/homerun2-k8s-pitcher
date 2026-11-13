@@ -115,14 +115,15 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 		}
 
 		event := pitcher.K8sEvent{
-			Kind:      spec.Kind,
-			EventType: "snapshot",
-			Namespace: item.GetNamespace(),
-			Name:      item.GetName(),
-			Object:    obj,
-			Summary:   summary.SummarizeText(spec.Kind, obj),
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Cluster:   c.clusterName,
+			Kind:        spec.Kind,
+			EventType:   "snapshot",
+			Namespace:   item.GetNamespace(),
+			Name:        item.GetName(),
+			Object:      obj,
+			Summary:     summary.SummarizeText(spec.Kind, obj),
+			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			Cluster:     c.clusterName,
+			Unthrottled: !spec.Throttled(),
 		}
 
 		if err := c.pitcher.Pitch(event); err != nil {

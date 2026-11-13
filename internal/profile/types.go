@@ -80,7 +80,13 @@ type CollectorSpec struct {
 	Kind      string        `yaml:"kind"`
 	Namespace string        `yaml:"namespace"`
 	Interval  time.Duration `yaml:"interval"`
+	// Throttle false bypasses spec.cooldown and spec.rateLimit (#102).
+	Throttle *bool `yaml:"throttle"`
 }
+
+// Throttled reports whether the collector's events go through cooldown and
+// rate limit (default true).
+func (c CollectorSpec) Throttled() bool { return c.Throttle == nil || *c.Throttle }
 
 // Update filters of an informer.
 const (
@@ -110,6 +116,10 @@ type InformerSpec struct {
 	// DeleteSeverity overrides the severity of deletes (default WARNING),
 	// e.g. info for claims that are deleted on purpose.
 	DeleteSeverity string `yaml:"deleteSeverity"`
+	// Throttle false bypasses spec.cooldown and spec.rateLimit for this
+	// informer (#102): for archive-only data, where a dropped event is lost
+	// data, not a quieter channel. Default true.
+	Throttle *bool `yaml:"throttle"`
 	// IncludeObject sends the object along as the message payload (nested
 	// JSON in the Redis document, without metadata.managedFields).
 	IncludeObject bool `yaml:"includeObject"`
@@ -129,6 +139,10 @@ type InformerSpec struct {
 	IgnoreReasons  []string      `yaml:"ignoreReasons"`
 	MinDuration    time.Duration `yaml:"minDuration"`
 }
+
+// Throttled reports whether the informer's events go through cooldown and
+// rate limit (default true).
+func (s InformerSpec) Throttled() bool { return s.Throttle == nil || *s.Throttle }
 
 // HasConditionFilter reports whether the informer filters condition flips.
 func (s InformerSpec) HasConditionFilter() bool {

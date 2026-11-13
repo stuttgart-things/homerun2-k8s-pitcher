@@ -584,4 +584,7 @@ func TestLoadK8sGPTResultsProfile(t *testing.T) {
 	if len(inf.Events) != 3 {
 		t.Errorf("events = %v, want add, update, delete", inf.Events)
 	}
+	if inf.Throttled() {
+		t.Error("k8sgpt informer must be unthrottled (throttle: false): its findings are archive data")
+	}
 }

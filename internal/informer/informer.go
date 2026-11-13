@@ -272,6 +272,7 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	ev.Summary = text
 	ev.Timestamp = m.clock.Now().UTC().Format(time.RFC3339)
 	ev.Cluster = m.clusterName
+	ev.Unthrottled = !spec.Throttled()
 	ev.Key = m.cooldownKey(ev)
 
 	if err := m.pitcher.Pitch(ev); err != nil {

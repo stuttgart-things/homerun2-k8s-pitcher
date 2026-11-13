@@ -173,3 +173,37 @@ func names(events []pitcher.K8sEvent) string {
 	}
 	return strings.Join(s, ",")
 }
+
+// Unthrottled events (throttle: false, #102) pass cooldown and rate limit,
+// and do not use up the window of the throttled ones.
+func TestUnthrottledBypasses(t *testing.T) {
+	p, mp, c := newTest(time.Hour, &profile.RateLimit{Max: 2, Per: 10 * time.Minute})
+
+	for i := range 50 {
+		e := ev(fmt.Sprint(i), "same")
+		e.Unthrottled = true
+		_ = p.Pitch(e)
+	}
+	if n := len(mp.Events()); n != 50 {
+		t.Fatalf("unthrottled: pitched %d, want 50", n)
+	}
+
+	// The throttled ones still get their full window of 2.
+	for i := range 5 {
+		_ = p.Pitch(ev(fmt.Sprint("t", i), ""))
+	}
+	if n := len(mp.Events()); n != 52 {
+		t.Errorf("throttled after unthrottled: pitched %d, want 50+2", n)
+	}
+
+	// An unthrottled event starts no cooldown for its key.
+	e := ev("x", "k")
+	e.Unthrottled = true
+	_ = p.Pitch(e)
+	c.advance(11 * time.Minute) // new window; the summary of 3 suppressed comes first
+	_ = p.Pitch(ev("y", "k"))
+	got := mp.Events()
+	if last := got[len(got)-1]; last.Name != "y" {
+		t.Errorf("throttled event after an unthrottled one with the same key was dropped: last %+v", last)
+	}
+}

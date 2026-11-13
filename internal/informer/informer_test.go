@@ -530,3 +530,24 @@ func TestCooldownKey(t *testing.T) {
 		t.Errorf("keys differ: %+v", ev)
 	}
 }
+
+// throttle: false marks the informer's events, the throttle wrapper lets them
+// through (#102). Default: throttled.
+func TestInformerThrottleFlag(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+	off := false
+	for _, tc := range []struct {
+		spec profile.InformerSpec
+		want bool
+	}{
+		{profile.InformerSpec{}, false},
+		{profile.InformerSpec{Throttle: &off}, true},
+	} {
+		mp := &mockPitcher{}
+		mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c")
+		mgr.pitch(tc.spec, gvr, k8sgptResult("x"), pitcher.K8sEvent{EventType: "add"})
+		if got := mp.Events()[0].Unthrottled; got != tc.want {
+			t.Errorf("throttle %v: Unthrottled = %v, want %v", tc.spec.Throttle, got, tc.want)
+		}
+	}
+}
