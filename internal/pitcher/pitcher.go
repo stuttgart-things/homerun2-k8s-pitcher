@@ -38,6 +38,9 @@ type K8sEvent struct {
 	Subsystem string         `json:"subsystem,omitempty"` // source subsystem (e.g. "flux", "kubernetes")
 	Timestamp string         `json:"timestamp"`
 	Cluster   string         `json:"cluster"`
+	// Fingerprint identifies a K8sGPT finding across events, snapshots and
+	// clusters; sent as the tag fp=<fingerprint> (#103).
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// Unthrottled events bypass cooldown and rate limit (throttle: false on
 	// the informer or collector, #102): archive-only data such as K8sGPT
 	// findings must not be dropped.
@@ -147,6 +150,9 @@ func toMessage(event K8sEvent, cluster, system string) (homerun.Message, error) 
 	}
 
 	tags := fmt.Sprintf("k8s,%s,%s,%s", event.Kind, event.EventType, event.Namespace)
+	if event.Fingerprint != "" {
+		tags += ",fp=" + event.Fingerprint
+	}
 	if event.Kind == "Event" {
 		if reason, _, _, _ := EventSubject(event.Object); reason != "" {
 			tags += "," + reason

@@ -38,3 +38,15 @@ spec:
       # Archive data: bypass spec.cooldown/spec.rateLimit if a profile sets
       # them, a dropped finding would be missing in the archive (#102).
       throttle: false
+  # The open findings as one snapshot per hour (#103): the archive's current
+  # state per cluster, also after a restart (missed deletes, findings older
+  # than the pitcher -- events alone cannot tell). Each item carries the
+  # finding's fingerprint, as the events do in their tag fp=<hash>.
+  collectors:
+    - group: core.k8sgpt.ai
+      version: v1alpha1
+      resource: results
+      namespace: k8sgpt-operator-system
+      interval: 1h
+      mode: snapshot
+      throttle: false

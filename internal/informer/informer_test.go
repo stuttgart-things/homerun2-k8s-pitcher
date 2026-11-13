@@ -190,48 +190,6 @@ func TestPitchEventFields(t *testing.T) {
 	}
 }
 
-func TestPayloadOf(t *testing.T) {
-	obj := map[string]any{
-		"kind": "Pod",
-		"metadata": map[string]any{
-			"name":          "p",
-			"managedFields": []any{map[string]any{"manager": "kubectl"}},
-			"annotations": map[string]any{
-				lastApplied: "{...}",
-				"keep":      "me",
-			},
-		},
-	}
-	got := payloadOf(obj)
-
-	meta := got["metadata"].(map[string]any)
-	if _, ok := meta["managedFields"]; ok {
-		t.Error("managedFields not stripped")
-	}
-	ann := meta["annotations"].(map[string]any)
-	if _, ok := ann[lastApplied]; ok || ann["keep"] != "me" {
-		t.Errorf("annotations = %v", ann)
-	}
-	if meta["name"] != "p" || got["kind"] != "Pod" {
-		t.Errorf("payload lost fields: %v", got)
-	}
-
-	// The informer's object (and its cache) must stay untouched.
-	orig := obj["metadata"].(map[string]any)
-	if _, ok := orig["managedFields"]; !ok {
-		t.Error("payloadOf modified the object's metadata")
-	}
-	if _, ok := orig["annotations"].(map[string]any)[lastApplied]; !ok {
-		t.Error("payloadOf modified the object's annotations")
-	}
-
-	// Only the last-applied annotation: no empty annotations map remains.
-	only := payloadOf(map[string]any{"metadata": map[string]any{"annotations": map[string]any{lastApplied: "x"}}})
-	if _, ok := only["metadata"].(map[string]any)["annotations"]; ok {
-		t.Error("empty annotations kept")
-	}
-}
-
 func k8sgptResult(errs ...string) *unstructured.Unstructured {
 	var es []any
 	for _, e := range errs {
@@ -549,5 +507,22 @@ func TestInformerThrottleFlag(t *testing.T) {
 		if got := mp.Events()[0].Unthrottled; got != tc.want {
 			t.Errorf("throttle %v: Unthrottled = %v, want %v", tc.spec.Throttle, got, tc.want)
 		}
+	}
+}
+
+// A Result event carries the finding's fingerprint, any other object none.
+func TestInformerFingerprint(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+	mp := &mockPitcher{}
+	mgr := New(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), mp, nil, "c")
+	mgr.pitch(profile.InformerSpec{}, gvr, k8sgptResult("x"), pitcher.K8sEvent{EventType: "add"})
+	if fp := mp.Events()[0].Fingerprint; len(fp) != 16 {
+		t.Errorf("fingerprint %q", fp)
+	}
+	mgr.pitch(profile.InformerSpec{}, schema.GroupVersionResource{Version: "v1", Resource: "pods"}, &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "p"},
+	}}, pitcher.K8sEvent{EventType: "add"})
+	if fp := mp.Events()[1].Fingerprint; fp != "" {
+		t.Errorf("pod fingerprint %q", fp)
 	}
 }

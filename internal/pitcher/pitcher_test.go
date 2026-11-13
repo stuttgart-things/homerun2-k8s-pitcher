@@ -464,3 +464,18 @@ func TestToMessage_EventTitleAndTags(t *testing.T) {
 		}
 	}
 }
+
+// The fingerprint of a K8sGPT finding goes along as the tag fp=<hash> (#103).
+func TestToMessage_FingerprintTag(t *testing.T) {
+	msg, err := toMessage(K8sEvent{Kind: "Result", EventType: "add", Namespace: "k8sgpt", Summary: "s", Fingerprint: "0123456789abcdef"}, "labda", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Tags, ",fp=0123456789abcdef") {
+		t.Errorf("tags %q", msg.Tags)
+	}
+	msg, _ = toMessage(K8sEvent{Kind: "Pod", EventType: "add", Summary: "s"}, "labda", "")
+	if strings.Contains(msg.Tags, "fp=") {
+		t.Errorf("fp tag without fingerprint: %q", msg.Tags)
+	}
+}

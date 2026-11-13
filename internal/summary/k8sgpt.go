@@ -1,7 +1,10 @@
 package summary
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -78,4 +81,80 @@ func textK8sGPTResult(obj map[string]any) string {
 	}
 
 	return strings.TrimSpace(b.String())
+}
+
+// Fingerprint identifies a K8sGPT finding across events, snapshots and
+// clusters (#103): a short hash of the cluster, the object the Result is
+// about and its sorted error texts. The same problem on the same object keeps
+// its fingerprint across scans; a changed error text makes a new one. False
+// for anything but a K8sGPT Result.
+func Fingerprint(cluster, kind string, obj map[string]any) (string, bool) {
+	if !isK8sGPTResult(kind, obj) {
+		return "", false
+	}
+	var texts []string
+	for _, e := range getSlice(obj, "spec", "error") {
+		if m, ok := e.(map[string]any); ok {
+			texts = append(texts, anyStr(m["text"]))
+		}
+	}
+	sort.Strings(texts)
+	h := sha256.New()
+	for _, p := range append([]string{cluster, getStr(obj, "spec", "kind"), getStr(obj, "spec", "name")}, texts...) {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], true
+}
+
+// IsK8sGPTResult reports whether obj is a K8sGPT Result.
+func IsK8sGPTResult(kind string, obj map[string]any) bool { return isK8sGPTResult(kind, obj) }
+
+// SnapshotHeader is title and summary of a snapshot of objects (#103):
+// "K8sGPT snapshot platform-sthings: 2 findings" with one line per finding,
+// or "<resource> snapshot <cluster>: N objects" for any other kind.
+func SnapshotHeader(cluster, resource string, items []map[string]any) (title, text string) {
+	k8sgpt := len(items) > 0 && isK8sGPTResult(getStr(items[0], "kind"), items[0])
+	if resource == "results" && len(items) == 0 {
+		k8sgpt = true
+	}
+	var b strings.Builder
+	const maxLines = 50
+	for i, it := range items {
+		if i == maxLines {
+			fmt.Fprintf(&b, "... and %d more\n", len(items)-maxLines)
+			break
+		}
+		if k8sgpt {
+			first := ""
+			if errs := getSlice(it, "spec", "error"); len(errs) > 0 {
+				if m, ok := errs[0].(map[string]any); ok {
+					first = anyStr(m["text"])
+				}
+			}
+			fmt.Fprintf(&b, "%s: %s\n", resultSubject(it), first)
+			continue
+		}
+		name := getStr(it, "metadata", "name")
+		if ns := getStr(it, "metadata", "namespace"); ns != "" {
+			name = ns + "/" + name
+		}
+		fmt.Fprintf(&b, "%s\n", name)
+	}
+	if k8sgpt {
+		noun := "findings"
+		if len(items) == 1 {
+			noun = "finding"
+		}
+		title = fmt.Sprintf("K8sGPT snapshot %s: %d %s", cluster, len(items), noun)
+		if len(items) == 0 {
+			text = "No open findings."
+		}
+	} else {
+		title = fmt.Sprintf("%s snapshot %s: %d objects", resource, cluster, len(items))
+	}
+	if text == "" {
+		text = strings.TrimSpace(b.String())
+	}
+	return title, text
 }

@@ -3,6 +3,7 @@ package profile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -586,5 +587,37 @@ func TestLoadK8sGPTResultsProfile(t *testing.T) {
 	}
 	if inf.Throttled() {
 		t.Error("k8sgpt informer must be unthrottled (throttle: false): its findings are archive data")
+	}
+	if len(p.Spec.Collectors) != 1 {
+		t.Fatalf("collectors = %d, want the results snapshot", len(p.Spec.Collectors))
+	}
+	col := p.Spec.Collectors[0]
+	if col.Resource != "results" || col.Mode != CollectorSnapshot || col.Throttled() || col.Interval <= 0 {
+		t.Errorf("collector = %+v", col)
+	}
+}
+
+func TestCollectorValidation(t *testing.T) {
+	base := func(c CollectorSpec) *K8sPitcherProfile {
+		return &K8sPitcherProfile{Spec: Spec{Pitcher: PitcherConfig{Addr: "http://omni/pitch"}, Collectors: []CollectorSpec{c}}}
+	}
+	for _, tc := range []struct {
+		c    CollectorSpec
+		want string
+	}{
+		{CollectorSpec{Interval: time.Hour}, "kind or resource is required"},
+		{CollectorSpec{Kind: "Pod", Resource: "pods", Version: "v1", Interval: time.Hour}, "mutually exclusive"},
+		{CollectorSpec{Resource: "results", Interval: time.Hour}, "needs a version"},
+		{CollectorSpec{Kind: "Pod", Interval: time.Hour, Mode: "all"}, "mode must be"},
+		{CollectorSpec{Resource: "results", Version: "v1alpha1", Group: "core.k8sgpt.ai", Interval: time.Hour, Mode: "snapshot"}, ""},
+		{CollectorSpec{Kind: "Pod", Interval: time.Hour}, ""},
+	} {
+		err := validate(base(tc.c))
+		if tc.want == "" && err != nil {
+			t.Errorf("%+v: %v", tc.c, err)
+		}
+		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%+v: err %v, want %q", tc.c, err, tc.want)
+		}
 	}
 }

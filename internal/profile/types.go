@@ -77,12 +77,26 @@ type SecretRef struct {
 }
 
 type CollectorSpec struct {
+	// Kind is one of the built-in kinds (Node, Pod, Event). Instead, any
+	// resource can be named by group/version/resource (#103).
 	Kind      string        `yaml:"kind"`
+	Group     string        `yaml:"group"`
+	Version   string        `yaml:"version"`
+	Resource  string        `yaml:"resource"`
 	Namespace string        `yaml:"namespace"`
 	Interval  time.Duration `yaml:"interval"`
+	// Mode is items (default: one message per object) or snapshot (one
+	// message per run, the objects as its payload, #103).
+	Mode string `yaml:"mode"`
 	// Throttle false bypasses spec.cooldown and spec.rateLimit (#102).
 	Throttle *bool `yaml:"throttle"`
 }
+
+// Collector modes.
+const (
+	CollectorItems    = "items"
+	CollectorSnapshot = "snapshot"
+)
 
 // Throttled reports whether the collector's events go through cooldown and
 // rate limit (default true).

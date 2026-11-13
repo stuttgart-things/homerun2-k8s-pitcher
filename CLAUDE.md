@@ -26,8 +26,8 @@ K8s API → informers (real-time add/update/delete)  → Redis Streams
 - `main.go` — entrypoint: flag parsing, profile loading, orchestration
 - `internal/profile/` — K8sPitcherProfile types and YAML loader
 - `internal/kube/` — K8s client init (kubeconfig + in-cluster), secret resolution
-- `internal/collector/` — periodic snapshot gatherers (Node, Pod, Event)
-- `internal/summary/` — message text per kind; `k8sgpt.go`: K8sGPT Results as findings (title, severity, error texts, #99)
+- `internal/collector/` — periodic gatherers: built-in kinds (Node, Pod, Event) or any GVR; `mode: snapshot` = one message per run with all objects as payload (#103)
+- `internal/summary/` — message text per kind; `k8sgpt.go`: K8sGPT Results as findings (title, severity, error texts, #99), `Fingerprint`, `SnapshotHeader` (#103)
 - `internal/informer/` — dynamic informer manager (any GVR including CRDs); `conditions.go` filters condition flips (ignoreStatuses, ignoreReasons, minDuration timers, injectable clock, #89)
 - `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
 - `internal/config/` — logging setup
