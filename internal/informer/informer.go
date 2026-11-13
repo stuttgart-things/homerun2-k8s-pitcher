@@ -255,7 +255,7 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 		text = ev.Summary + "\n" + text
 	}
 	if spec.IncludeObject {
-		ev.Payload = payloadOf(objMap)
+		ev.Payload = pitcher.PayloadOf(objMap)
 	}
 	if h, ok := summary.Headline(kind, objMap, ev.EventType); ok && ev.Title == "" {
 		ev.Title = h.Title
@@ -273,6 +273,9 @@ func (m *Manager) pitch(spec profile.InformerSpec, gvr schema.GroupVersionResour
 	ev.Timestamp = m.clock.Now().UTC().Format(time.RFC3339)
 	ev.Cluster = m.clusterName
 	ev.Unthrottled = !spec.Throttled()
+	if fp, ok := summary.Fingerprint(m.clusterName, kind, objMap); ok {
+		ev.Fingerprint = fp
+	}
 	ev.Key = m.cooldownKey(ev)
 
 	if err := m.pitcher.Pitch(ev); err != nil {
@@ -301,45 +304,6 @@ func (m *Manager) cooldownKey(ev pitcher.K8sEvent) string {
 	}
 	return ""
 }
-
-// payloadOf returns obj without the fields that only bloat a payload: the
-// server-side apply bookkeeping in metadata.managedFields and the client-side
-// copy in the last-applied-configuration annotation. obj is not modified.
-func payloadOf(obj map[string]any) map[string]any {
-	out := make(map[string]any, len(obj))
-	for k, v := range obj {
-		out[k] = v
-	}
-	meta, ok := obj["metadata"].(map[string]any)
-	if !ok {
-		return out
-	}
-	m := make(map[string]any, len(meta))
-	for k, v := range meta {
-		if k != "managedFields" {
-			m[k] = v
-		}
-	}
-	if ann, ok := meta["annotations"].(map[string]any); ok {
-		if _, has := ann[lastApplied]; has {
-			a := make(map[string]any, len(ann))
-			for k, v := range ann {
-				if k != lastApplied {
-					a[k] = v
-				}
-			}
-			if len(a) > 0 {
-				m["annotations"] = a
-			} else {
-				delete(m, "annotations")
-			}
-		}
-	}
-	out["metadata"] = m
-	return out
-}
-
-const lastApplied = "kubectl.kubernetes.io/last-applied-configuration"
 
 func toMap(obj any) (map[string]any, error) {
 	data, err := json.Marshal(obj)

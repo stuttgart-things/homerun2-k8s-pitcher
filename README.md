@@ -84,6 +84,9 @@ spec:
     port: "8080"
     hmacKey: ""  # optional HMAC key for signature verification
 
+  # kind: Node, Pod or Event -- or any resource by group/version/resource.
+  # mode: items (default, one message per object) or snapshot (one message
+  # per run, the objects as its payload).
   collectors:
     - kind: Node
       interval: 60s
@@ -160,6 +163,27 @@ generation`: the operator re-stamps unchanged Results in their status on every
 scan, and only a changed finding bumps the generation. With `includeObject`,
 the Result goes along as the payload, so an archive gets `spec.error[]` as
 JSON. See `profiles/k8sgpt-results.yaml`.
+
+**Fingerprint.** Every Result event carries the tag `fp=<16 hex>`: a hash of
+cluster, object and sorted error texts. The same problem on the same object
+keeps its fingerprint across scans and restarts, so an archive can join
+events, snapshots and clusters (#103).
+
+**Snapshot.** Events alone miss what happened while the pitcher was down (a
+deleted Result never becomes "resolved") and findings older than the pitcher.
+A collector in `mode: snapshot` pitches all Results as **one** message per
+interval -- the current state of the cluster -- titled
+`K8sGPT snapshot <cluster>: N findings`, severity `info`, with the payload
+
+```json
+{"cluster": "labda", "resource": "results", "count": 2,
+ "items": [{"fingerprint": "3f1c…", "object": {"kind": "Result", "spec": {…}}}]}
+```
+
+`0 findings` is a snapshot too: the cluster is clean. Above homerun-library's
+payload limit the objects shrink to apiVersion, kind, name and spec
+(`trimmed: true`), then items are cut (`truncated: true`, `count` stays the
+total).
 
 ```yaml
 apiVersion: core.k8sgpt.ai/v1alpha1

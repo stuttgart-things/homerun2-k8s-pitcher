@@ -64,3 +64,40 @@ func TestHeadlineOnlyForK8sGPTResults(t *testing.T) {
 		t.Errorf("foreign Result summarized as K8sGPT: %q", got)
 	}
 }
+
+func TestFingerprint(t *testing.T) {
+	a := result("core.k8sgpt.ai/v1alpha1", "one", "two")
+	b := result("core.k8sgpt.ai/v1alpha1", "two", "one") // order of errors
+	fa, ok := Fingerprint("c1", "Result", a)
+	fb, _ := Fingerprint("c1", "Result", b)
+	if !ok || len(fa) != 16 || fa != fb {
+		t.Errorf("fingerprint %q %q ok %v", fa, fb, ok)
+	}
+	if fc, _ := Fingerprint("c2", "Result", a); fc == fa {
+		t.Error("other cluster, same fingerprint")
+	}
+	if fd, _ := Fingerprint("c1", "Result", result("core.k8sgpt.ai/v1alpha1", "one", "three")); fd == fa {
+		t.Error("other error text, same fingerprint")
+	}
+	if _, ok := Fingerprint("c1", "Pod", map[string]any{"apiVersion": "v1"}); ok {
+		t.Error("fingerprint for a Pod")
+	}
+}
+
+func TestSnapshotHeader(t *testing.T) {
+	r := result("core.k8sgpt.ai/v1alpha1", "Deployment has 1 replicas but 0 are available")
+	title, text := SnapshotHeader("labda", "results", []map[string]any{r, r})
+	if title != "K8sGPT snapshot labda: 2 findings" || !strings.Contains(text, "Deployment default/web: Deployment has 1 replicas") {
+		t.Errorf("title %q text %q", title, text)
+	}
+	if title, _ := SnapshotHeader("labda", "results", []map[string]any{r}); title != "K8sGPT snapshot labda: 1 finding" {
+		t.Errorf("singular: %q", title)
+	}
+	if title, text := SnapshotHeader("labda", "results", nil); title != "K8sGPT snapshot labda: 0 findings" || text != "No open findings." {
+		t.Errorf("empty: %q %q", title, text)
+	}
+	pod := map[string]any{"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "p", "namespace": "ns"}}
+	if title, text := SnapshotHeader("labda", "pods", []map[string]any{pod}); title != "pods snapshot labda: 1 objects" || text != "ns/p" {
+		t.Errorf("generic: %q %q", title, text)
+	}
+}

@@ -86,8 +86,16 @@ func validate(p *K8sPitcherProfile) error {
 		}
 	}
 	for i, col := range p.Spec.Collectors {
-		if col.Kind == "" {
-			return fmt.Errorf("spec.collectors[%d].kind is required", i)
+		switch {
+		case col.Kind == "" && col.Resource == "":
+			return fmt.Errorf("spec.collectors[%d]: kind or resource is required", i)
+		case col.Kind != "" && col.Resource != "":
+			return fmt.Errorf("spec.collectors[%d]: kind and resource are mutually exclusive", i)
+		case col.Resource != "" && col.Version == "":
+			return fmt.Errorf("spec.collectors[%d]: resource needs a version", i)
+		}
+		if col.Mode != "" && col.Mode != CollectorItems && col.Mode != CollectorSnapshot {
+			return fmt.Errorf("spec.collectors[%d].mode must be items or snapshot, got %q", i, col.Mode)
 		}
 		if col.Interval <= 0 {
 			return fmt.Errorf("spec.collectors[%d].interval must be positive", i)

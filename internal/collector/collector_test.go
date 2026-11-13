@@ -2,9 +2,14 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	homerun "github.com/stuttgart-things/homerun-library/v4"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -288,5 +293,99 @@ func TestCollectPreservesMetadata(t *testing.T) {
 	}
 	if e.Name != "nginx.12345" {
 		t.Errorf("name = %q, want nginx.12345", e.Name)
+	}
+}
+
+func k8sgptResult(name string, errs ...string) *unstructured.Unstructured {
+	var es []any
+	for _, e := range errs {
+		es = append(es, map[string]any{"text": e})
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "core.k8sgpt.ai/v1alpha1",
+		"kind":       "Result",
+		"metadata": map[string]any{
+			"name": name, "namespace": "k8sgpt",
+			"managedFields": []any{map[string]any{"manager": "operator"}},
+		},
+		"spec": map[string]any{"kind": "Pod", "name": "default/" + name, "error": es},
+	}}
+}
+
+var resultsGVR = schema.GroupVersionResource{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results"}
+
+func snapshotCollector(objs ...runtime.Object) (*Collector, *mockPitcher, profile.CollectorSpec) {
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{resultsGVR: "ResultList"}, objs...)
+	mp := &mockPitcher{}
+	off := false
+	spec := profile.CollectorSpec{Group: "core.k8sgpt.ai", Version: "v1alpha1", Resource: "results",
+		Namespace: "k8sgpt", Interval: time.Hour, Mode: profile.CollectorSnapshot, Throttle: &off}
+	return New(client, mp, []profile.CollectorSpec{spec}, "labda"), mp, spec
+}
+
+// One message per run for all Results, each with its fingerprint (#103).
+func TestSnapshotResults(t *testing.T) {
+	c, mp, spec := snapshotCollector(k8sgptResult("web-0", "back-off"), k8sgptResult("web-1", "oom"))
+	gvr, _ := gvrFor(spec)
+	c.collect(context.Background(), spec, gvr)
+
+	events := mp.Events()
+	if len(events) != 1 {
+		t.Fatalf("pitched %d messages, want 1 snapshot", len(events))
+	}
+	e := events[0]
+	if e.EventType != "snapshot" || e.Kind != "Result" || e.Title != "K8sGPT snapshot labda: 2 findings" || !e.Unthrottled || e.Severity != "info" {
+		t.Errorf("event %+v", e)
+	}
+	if e.Payload["count"] != 2 || e.Payload["resource"] != "results" || e.Payload["cluster"] != "labda" {
+		t.Errorf("payload header %v", e.Payload)
+	}
+	items := e.Payload["items"].([]any)
+	for _, it := range items {
+		entry := it.(map[string]any)
+		if fp, _ := entry["fingerprint"].(string); len(fp) != 16 {
+			t.Errorf("fingerprint %v", entry["fingerprint"])
+		}
+		meta := entry["object"].(map[string]any)["metadata"].(map[string]any)
+		if _, ok := meta["managedFields"]; ok {
+			t.Error("managedFields not stripped")
+		}
+	}
+}
+
+// No Results is a snapshot too: "0 findings" says the cluster is clean.
+func TestSnapshotEmpty(t *testing.T) {
+	c, mp, spec := snapshotCollector()
+	gvr, _ := gvrFor(spec)
+	c.collect(context.Background(), spec, gvr)
+	if e := mp.Events(); len(e) != 1 || e[0].Title != "K8sGPT snapshot labda: 0 findings" {
+		t.Errorf("events %+v", e)
+	}
+}
+
+// An oversized snapshot is trimmed to fit homerun-library's limit.
+func TestSnapshotFitsLimit(t *testing.T) {
+	big := strings.Repeat("x", 4000)
+	var objs []runtime.Object
+	for i := range 120 {
+		r := k8sgptResult(fmt.Sprintf("p%d", i), "e")
+		r.Object["status"] = map[string]any{"blob": big} // dropped by trimming
+		objs = append(objs, r)
+	}
+	c, mp, spec := snapshotCollector(objs...)
+	gvr, _ := gvrFor(spec)
+	c.collect(context.Background(), spec, gvr)
+
+	p := mp.Events()[0].Payload
+	raw, _ := json.Marshal(p)
+	if len(raw) > homerun.MaxPayloadSize {
+		t.Errorf("payload %d bytes, limit %d", len(raw), homerun.MaxPayloadSize)
+	}
+	if p["trimmed"] != true || p["count"] != 120 {
+		t.Errorf("trimmed %v count %v", p["trimmed"], p["count"])
+	}
+	if p["truncated"] == true {
+		t.Error("120 small specs should fit after trimming, not be cut")
 	}
 }

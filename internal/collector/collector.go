@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	homerun "github.com/stuttgart-things/homerun-library/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
@@ -58,8 +60,18 @@ func (c *Collector) Start(ctx context.Context) {
 	wg.Wait()
 }
 
-func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
+// gvrFor is the GVR of a spec: group/version/resource if set, else the
+// built-in kind.
+func gvrFor(spec profile.CollectorSpec) (schema.GroupVersionResource, bool) {
+	if spec.Resource != "" {
+		return schema.GroupVersionResource{Group: spec.Group, Version: spec.Version, Resource: spec.Resource}, true
+	}
 	gvr, ok := gvrForKind[spec.Kind]
+	return gvr, ok
+}
+
+func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
+	gvr, ok := gvrFor(spec)
 	if !ok {
 		slog.Error("unknown collector kind", "kind", spec.Kind)
 		return
@@ -67,6 +79,8 @@ func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
 
 	slog.Info("collector started",
 		"kind", spec.Kind,
+		"resource", gvr.Resource,
+		"mode", spec.Mode,
 		"namespace", spec.Namespace,
 		"interval", spec.Interval,
 	)
@@ -103,9 +117,15 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 
 	slog.Debug("collector snapshot",
 		"kind", spec.Kind,
+		"resource", gvr.Resource,
 		"namespace", spec.Namespace,
 		"count", len(list.Items),
 	)
+
+	if spec.Mode == profile.CollectorSnapshot {
+		c.pitchSnapshot(spec, gvr, list.Items)
+		return
+	}
 
 	for _, item := range list.Items {
 		obj, err := toMap(item.Object)
@@ -134,6 +154,98 @@ func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr
 			)
 		}
 	}
+}
+
+// pitchSnapshot pitches one message for all objects of a run (#103). The
+// payload carries every object (stripped like includeObject) with its
+// K8sGPT fingerprint; it is trimmed to fit homerun-library's limit.
+func (c *Collector) pitchSnapshot(spec profile.CollectorSpec, gvr schema.GroupVersionResource, list []unstructured.Unstructured) {
+	objs := make([]map[string]any, 0, len(list))
+	items := make([]any, 0, len(list))
+	kind := spec.Kind
+	for _, item := range list {
+		obj, err := toMap(item.Object)
+		if err != nil {
+			slog.Error("collector marshal failed", "resource", gvr.Resource, "name", item.GetName(), "error", err)
+			continue
+		}
+		if kind == "" {
+			kind = item.GetKind()
+		}
+		objs = append(objs, obj)
+		entry := map[string]any{"object": pitcher.PayloadOf(obj)}
+		if fp, ok := summary.Fingerprint(c.clusterName, item.GetKind(), obj); ok {
+			entry["fingerprint"] = fp
+		}
+		items = append(items, entry)
+	}
+	if kind == "" {
+		kind = gvr.Resource
+	}
+
+	payload := map[string]any{
+		"cluster":   c.clusterName,
+		"group":     gvr.Group,
+		"version":   gvr.Version,
+		"resource":  gvr.Resource,
+		"namespace": spec.Namespace,
+		"count":     len(items),
+		"items":     items,
+	}
+	fitPayload(payload)
+
+	title, text := summary.SnapshotHeader(c.clusterName, gvr.Resource, objs)
+	event := pitcher.K8sEvent{
+		Kind:        kind,
+		EventType:   "snapshot",
+		Title:       title,
+		Severity:    "info",
+		Summary:     text,
+		Payload:     payload,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Cluster:     c.clusterName,
+		Unthrottled: !spec.Throttled(),
+	}
+	if err := c.pitcher.Pitch(event); err != nil {
+		slog.Error("collector snapshot pitch failed", "resource", gvr.Resource, "error", err)
+	}
+}
+
+// fitPayload keeps a snapshot payload under homerun-library's MaxPayloadSize:
+// first every object shrinks to apiVersion, kind, name, namespace and spec,
+// then items are cut from the end. truncated says so; count stays the total.
+func fitPayload(payload map[string]any) {
+	if size(payload) <= homerun.MaxPayloadSize {
+		return
+	}
+	items, _ := payload["items"].([]any)
+	for _, it := range items {
+		entry, _ := it.(map[string]any)
+		obj, _ := entry["object"].(map[string]any)
+		meta, _ := obj["metadata"].(map[string]any)
+		entry["object"] = map[string]any{
+			"apiVersion": obj["apiVersion"],
+			"kind":       obj["kind"],
+			"metadata":   map[string]any{"name": meta["name"], "namespace": meta["namespace"]},
+			"spec":       obj["spec"],
+		}
+	}
+	payload["trimmed"] = true
+	for size(payload) > homerun.MaxPayloadSize && len(items) > 0 {
+		items = items[:len(items)*9/10]
+		payload["items"] = items
+		payload["truncated"] = true
+	}
+	slog.Warn("snapshot payload trimmed to fit", "resource", payload["resource"],
+		"count", payload["count"], "kept", len(items))
+}
+
+func size(v any) int {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return 0
+	}
+	return len(b)
 }
 
 // toMap converts an unstructured object to map[string]any via JSON round-trip.
