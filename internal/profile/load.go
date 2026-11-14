@@ -93,6 +93,8 @@ func validate(p *K8sPitcherProfile) error {
 			return fmt.Errorf("spec.collectors[%d]: kind and resource are mutually exclusive", i)
 		case col.Resource != "" && col.Version == "":
 			return fmt.Errorf("spec.collectors[%d]: resource needs a version", i)
+		case col.Kind == "Inventory" && col.Mode != "":
+			return fmt.Errorf("spec.collectors[%d]: kind Inventory takes no mode (it is always one snapshot)", i)
 		}
 		if col.Mode != "" && col.Mode != CollectorItems && col.Mode != CollectorSnapshot {
 			return fmt.Errorf("spec.collectors[%d].mode must be items or snapshot, got %q", i, col.Mode)

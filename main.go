@@ -148,6 +148,13 @@ func main() {
 	// Start collectors
 	if len(prof.Spec.Collectors) > 0 {
 		c := collector.New(kubeClient.DynamicClient, p, prof.Spec.Collectors, kubeClient.ClusterName)
+		c.ServerVersion = func() (string, error) {
+			v, err := kubeClient.Clientset.Discovery().ServerVersion()
+			if err != nil {
+				return "", err
+			}
+			return v.GitVersion, nil
+		}
 		go c.Start(ctx)
 		slog.Info("collectors started", "count", len(prof.Spec.Collectors))
 	}

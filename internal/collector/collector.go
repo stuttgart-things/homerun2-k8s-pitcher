@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/inventory"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/summary"
@@ -34,7 +35,13 @@ type Collector struct {
 	pitcher     pitcher.K8sPitcher
 	specs       []profile.CollectorSpec
 	clusterName string
+	// ServerVersion returns the cluster's gitVersion for the inventory
+	// (#108); nil leaves it out.
+	ServerVersion func() (string, error)
 }
+
+// KindInventory is the built-in collector kind of the inventory snapshot.
+const KindInventory = "Inventory"
 
 // New creates a Collector from profile specs.
 func New(client dynamic.Interface, p pitcher.K8sPitcher, specs []profile.CollectorSpec, clusterName string) *Collector {
@@ -72,6 +79,10 @@ func gvrFor(spec profile.CollectorSpec) (schema.GroupVersionResource, bool) {
 }
 
 func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
+	if spec.Kind == KindInventory {
+		c.every(ctx, spec, func() { c.pitchInventory(ctx, spec) })
+		return
+	}
 	gvr, ok := gvrFor(spec)
 	if !ok {
 		slog.Error("unknown collector kind", "kind", spec.Kind)
@@ -86,21 +97,69 @@ func (c *Collector) run(ctx context.Context, spec profile.CollectorSpec) {
 		"interval", spec.Interval,
 	)
 
+	c.every(ctx, spec, func() { c.collect(ctx, spec, gvr) })
+}
+
+// every runs fn once immediately, then on the spec's interval.
+func (c *Collector) every(ctx context.Context, spec profile.CollectorSpec, fn func()) {
 	ticker := time.NewTicker(spec.Interval)
 	defer ticker.Stop()
-
-	// Run once immediately, then on interval
-	c.collect(ctx, spec, gvr)
-
+	fn()
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("collector stopped", "kind", spec.Kind)
 			return
 		case <-ticker.C:
-			c.collect(ctx, spec, gvr)
+			fn()
 		}
 	}
+}
+
+// pitchInventory pitches the inventory snapshot (#108) as system
+// inventory-<cluster> unless the spec names one.
+func (c *Collector) pitchInventory(ctx context.Context, spec profile.CollectorSpec) {
+	version := ""
+	if c.ServerVersion != nil {
+		v, err := c.ServerVersion()
+		if err != nil {
+			slog.Warn("inventory: server version", "error", err)
+		}
+		version = v
+	}
+	inv, err := inventory.Gather(ctx, c.client, c.clusterName, version)
+	if err != nil {
+		slog.Error("inventory failed", "error", err)
+		return
+	}
+	inv.Fit(homerun.MaxPayloadSize)
+	payload, err := toMap(inv)
+	if err != nil {
+		slog.Error("inventory marshal failed", "error", err)
+		return
+	}
+	system := spec.System
+	if system == "" {
+		system = "inventory-" + c.clusterName
+	}
+	title, text := inv.Summary()
+	event := pitcher.K8sEvent{
+		Kind:        KindInventory,
+		EventType:   "snapshot",
+		Title:       title,
+		Severity:    "info",
+		Summary:     text,
+		Payload:     payload,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Cluster:     c.clusterName,
+		Subsystem:   system,
+		Unthrottled: !spec.Throttled(),
+	}
+	if err := c.pitcher.Pitch(event); err != nil {
+		slog.Error("inventory pitch failed", "error", err)
+		return
+	}
+	slog.Info("inventory pitched", "system", system, "nodes", len(inv.Nodes), "images", inv.Count, "releases", len(inv.Releases))
 }
 
 func (c *Collector) collect(ctx context.Context, spec profile.CollectorSpec, gvr schema.GroupVersionResource) {

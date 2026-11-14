@@ -412,3 +412,33 @@ func TestCollectorUnservedAndSystem(t *testing.T) {
 		t.Errorf("subsystem %q", s)
 	}
 }
+
+func TestInventoryCollector(t *testing.T) {
+	scheme := runtime.NewScheme()
+	kinds := map[schema.GroupVersionResource]string{
+		{Version: "v1", Resource: "nodes"}: "NodeList", {Version: "v1", Resource: "pods"}: "PodList",
+		{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}: "HelmReleaseList",
+		{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications"}:      "ApplicationList",
+		{Group: "pkg.crossplane.io", Version: "v1", Resource: "configurations"}:    "ConfigurationList",
+		{Group: "pkg.crossplane.io", Version: "v1", Resource: "providers"}:         "ProviderList",
+		{Group: "pkg.crossplane.io", Version: "v1", Resource: "functions"}:         "FunctionList",
+	}
+	node := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Node", "metadata": map[string]any{"name": "n1"}}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kinds, node)
+	mp := &mockPitcher{}
+	c := New(client, mp, nil, "c1")
+	c.ServerVersion = func() (string, error) { return "v1.33.2", nil }
+	c.pitchInventory(context.Background(), profile.CollectorSpec{Kind: KindInventory})
+	ev := mp.Events()
+	if len(ev) != 1 {
+		t.Fatalf("events %d", len(ev))
+	}
+	e := ev[0]
+	if e.Subsystem != "inventory-c1" || e.EventType != "snapshot" || e.Payload["format"] != "inventory/v1" || e.Payload["version"] != "v1.33.2" {
+		t.Errorf("event %+v", e)
+	}
+	c.pitchInventory(context.Background(), profile.CollectorSpec{Kind: KindInventory, System: "inv-x"})
+	if got := mp.Events()[1].Subsystem; got != "inv-x" {
+		t.Errorf("system override %s", got)
+	}
+}

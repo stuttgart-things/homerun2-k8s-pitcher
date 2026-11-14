@@ -1,0 +1,39 @@
+# Inventory snapshot (#108): one message per interval with what runs on the
+# cluster, for the archive (homerun2-s3-catcher) and the fleet analysis
+# (homerun2-ai-pitcher). Payload format inventory/v1:
+#
+#   version    the API server's gitVersion
+#   nodes      name, roles, kubelet, OS image, kernel, container runtime, ready
+#   images     every image reference + digest in use (init and ephemeral
+#              containers included) with pods, namespaces and workloads
+#              (Deployment/StatefulSet/DaemonSet/CronJob/...); latest: true
+#              for :latest or untagged references
+#   releases   Flux HelmReleases, Argo CD Applications, Crossplane
+#              Configurations/Providers/Functions -- each only if served and
+#              readable
+#
+# System inventory-<cluster> unless `system` is set. Above 256 KiB the
+# workload lists shrink to one entry, then images are cut (truncated: n).
+#
+# RBAC: list nodes and pods cluster-wide; for the releases list
+# helmreleases.helm.toolkit.fluxcd.io, applications.argoproj.io and
+# configurations/providers/functions.pkg.crossplane.io (KCL: extraRules).
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: inventory
+spec:
+  cluster: my-cluster
+  pitcher:
+    addr: https://omni.example.com/pitch
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: omni-pitcher-token
+        namespace: homerun2
+        key: auth-token
+  collectors:
+    - kind: Inventory
+      interval: 24h
+      # Archive data: never dropped by spec.cooldown/spec.rateLimit.
+      throttle: false
