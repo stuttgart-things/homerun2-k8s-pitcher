@@ -100,7 +100,7 @@ type Prober struct {
 	Now     func() time.Time
 	Timeout time.Duration
 	// ExpectedStatus is the default of targets without their own; empty
-	// accepts any 2xx or 3xx.
+	// accepts any status below 500.
 	ExpectedStatus []int
 	WarnDays       int
 	ErrorDays      int
@@ -199,14 +199,16 @@ func (p *Prober) expected(t Target) []int {
 
 func statusOK(code int, expected []int) bool {
 	if len(expected) == 0 {
-		return code >= 200 && code < 400
+		// A heartbeat: the server answered. 401/403 behind a login, 404 on
+		// an API root are up; only 5xx is down.
+		return code >= 200 && code < 500
 	}
 	return slices.Contains(expected, code)
 }
 
 func describeExpected(expected []int) string {
 	if len(expected) == 0 {
-		return "2xx/3xx"
+		return "below 500"
 	}
 	s := make([]string, len(expected))
 	for i, c := range expected {

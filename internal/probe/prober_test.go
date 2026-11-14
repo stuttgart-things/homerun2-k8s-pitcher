@@ -141,8 +141,15 @@ func TestProbeHTTPStatus(t *testing.T) {
 	tgt.ExpectedStatus = nil
 	status = http.StatusServiceUnavailable
 	r = p.Probe(context.Background(), tgt)
-	if r.Success || len(r.Findings) != 1 || !strings.Contains(r.Findings[0].Texts[0], "2xx/3xx") {
+	if r.Success || len(r.Findings) != 1 || !strings.Contains(r.Findings[0].Texts[0], "below 500") {
 		t.Errorf("503: %+v", r)
+	}
+
+	// A login or an API root answering 401/403/404 is up.
+	for _, status = range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		if r = p.Probe(context.Background(), tgt); !r.Success {
+			t.Errorf("%d counted as down: %+v", status, r)
+		}
 	}
 }
 
