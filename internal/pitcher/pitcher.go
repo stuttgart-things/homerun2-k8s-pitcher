@@ -278,10 +278,24 @@ func NewHTTPK8sPitcher(addr, token string, insecure bool, clusterName string) *H
 // /ready answer 404 and fall back to /health, which only says the process is
 // up. This used to POST a real "health-check" message, so every pod start wrote
 // an event that consumers displayed (#65).
+//
+// Behind a gateway that routes only /pitch (the central omni-pitcher's
+// HTTPRoute), /ready and /health answer the gateway's 404: then GET on the
+// pitch URL itself decides -- any answer below 500 (401 without a token,
+// 405) means omni-pitcher is there; reaching it is all a start needs.
 func (p *HTTPK8sPitcher) HealthCheck(ctx context.Context) error {
 	status, err := p.get(ctx, "ready")
 	if err == nil && status == http.StatusNotFound {
 		status, err = p.get(ctx, "health")
+	}
+	if err == nil && status == http.StatusNotFound {
+		var pitchStatus int
+		if pitchStatus, err = p.getURL(ctx, p.Addr); err == nil && pitchStatus < http.StatusInternalServerError && pitchStatus != http.StatusNotFound {
+			return nil
+		}
+		if err == nil {
+			status = pitchStatus
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("pitcher health check failed: %w", err)
@@ -298,6 +312,11 @@ func (p *HTTPK8sPitcher) get(ctx context.Context, endpoint string) (int, error) 
 	if err != nil {
 		return 0, err
 	}
+	return p.getURL(ctx, u)
+}
+
+// getURL requests u and returns its status code.
+func (p *HTTPK8sPitcher) getURL(ctx context.Context, u string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return 0, fmt.Errorf("creating request: %w", err)

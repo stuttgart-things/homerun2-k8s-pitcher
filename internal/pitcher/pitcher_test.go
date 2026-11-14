@@ -303,6 +303,34 @@ func TestHTTPK8sPitcherHealthCheckFallsBackToHealth(t *testing.T) {
 	}
 }
 
+// Behind a gateway that routes only /pitch: /ready and /health are the
+// gateway's 404, the pitch URL answers 401 -- omni-pitcher is there.
+func TestHTTPK8sPitcherHealthCheckBehindPitchOnlyRoute(t *testing.T) {
+	for pitchStatus, wantOK := range map[int]bool{
+		http.StatusUnauthorized: true, http.StatusMethodNotAllowed: true,
+		http.StatusNotFound: false, http.StatusBadGateway: false,
+	} {
+		var paths []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			if r.URL.Path == "/pitch" {
+				w.WriteHeader(pitchStatus)
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		p := NewHTTPK8sPitcher(server.URL+"/pitch", "token", false, "test")
+		err := p.HealthCheck(context.Background())
+		server.Close()
+		if (err == nil) != wantOK {
+			t.Errorf("pitch %d: err %v, want ok=%v", pitchStatus, err, wantOK)
+		}
+		if strings.Join(paths, ",") != "/ready,/health,/pitch" {
+			t.Errorf("pitch %d: paths %v", pitchStatus, paths)
+		}
+	}
+}
+
 func TestHTTPK8sPitcherHealthCheckHangingServerTimesOut(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done() // accept the request, never answer
