@@ -205,6 +205,34 @@ spec:
   noCache: true
 ```
 
+### Inventory: versions and images
+
+A collector of `kind: Inventory` (#108) pitches one snapshot per interval
+with what runs on the cluster, as system `inventory-<cluster>` (or
+`system`), payload `inventory/v1` — for the archive and the fleet analysis
+(stuttgart-things/stuttgart-things#4556):
+
+```yaml
+collectors:
+  - kind: Inventory
+    interval: 24h
+    throttle: false
+```
+
+| Field | Content |
+|---|---|
+| `version` | API server gitVersion |
+| `nodes[]` | name, roles, kubelet, OS image, kernel, container runtime, ready |
+| `images[]` | image reference + digest with pods, namespaces, workloads (`Deployment/ns/name`, CronJob for its Jobs); `latest: true` for `:latest` or untagged |
+| `releases[]` | Flux HelmReleases, Argo CD Applications, Crossplane Configurations/Providers/Functions — each only if served and readable |
+
+It reports and does not judge: outdated versions or `:latest` images are
+for the analysis. Above 256 KiB the workload lists shrink to one entry
+(`trimmed`), then images are cut (`truncated: n`). RBAC: list `nodes` and
+`pods` cluster-wide, plus the release kinds (KCL `extraRules`). Example:
+[`profiles/inventory.yaml`](profiles/inventory.yaml). On platform-sthings
+the snapshot is ~74 KB (4 nodes, 106 images, 185 releases).
+
 ### Lasting failures only
 
 Flux flips every Kustomization to `Ready=Unknown (Progressing)`, often

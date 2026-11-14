@@ -77,8 +77,9 @@ type SecretRef struct {
 }
 
 type CollectorSpec struct {
-	// Kind is one of the built-in kinds (Node, Pod, Event). Instead, any
-	// resource can be named by group/version/resource (#103).
+	// Kind is one of the built-in kinds (Node, Pod, Event, or Inventory: one
+	// snapshot of versions, images and releases, #108). Instead, any resource
+	// can be named by group/version/resource (#103).
 	Kind      string        `yaml:"kind"`
 	Group     string        `yaml:"group"`
 	Version   string        `yaml:"version"`
