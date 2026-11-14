@@ -173,7 +173,7 @@ func (m *Manager) handlerFor(spec profile.InformerSpec, gvr schema.GroupVersionR
 				tracker.update(oldU, newU)
 				return
 			}
-			if ev, ok := updateEvent(spec.Updates, oldU, newU); ok {
+			if ev, ok := updateEvent(spec.Updates, spec.ReasonSeverity, oldU, newU); ok {
 				m.pitch(spec, gvr, newU, ev)
 			}
 		}
@@ -227,7 +227,7 @@ var watchedConditions = []string{"Ready", "Synced"}
 // a severity from the transition: Ready to False is error, Synced to False or
 // either to Unknown warning, back to True success. A condition that appears
 // for the first time is not a flip.
-func updateEvent(mode string, oldU, newU *unstructured.Unstructured) (pitcher.K8sEvent, bool) {
+func updateEvent(mode string, reasonSeverity map[string]string, oldU, newU *unstructured.Unstructured) (pitcher.K8sEvent, bool) {
 	ev := pitcher.K8sEvent{EventType: "update"}
 	if mode == profile.UpdatesAll {
 		return ev, true
@@ -242,7 +242,7 @@ func updateEvent(mode string, oldU, newU *unstructured.Unstructured) (pitcher.K8
 			}
 		}
 		if len(flips) > 0 {
-			return flipEvent(newU, flips), true
+			return flipEvent(newU, flips, reasonSeverity), true
 		}
 	}
 	if mode != profile.UpdatesFlips && oldU.GetGeneration() != newU.GetGeneration() {

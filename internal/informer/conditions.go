@@ -36,10 +36,15 @@ type flip struct {
 	state cond
 }
 
+// flipSeverities orders the severities a flip can get; the highest of
+// several flips wins.
+var flipSeverities = []string{"", "success", "info", "warning", "error", "critical"}
+
 // flipEvent titles flips e.g. "VirtualMachine/vm1 Ready=False
 // (ReconcileError)" with a severity from the transition: Ready to False is
 // error, Synced to False or either to Unknown warning, back to True success.
-func flipEvent(u *unstructured.Unstructured, flips []flip) pitcher.K8sEvent {
+// reasonSeverity overrides that by the reason a condition flipped to (#98).
+func flipEvent(u *unstructured.Unstructured, flips []flip, reasonSeverity map[string]string) pitcher.K8sEvent {
 	parts := make([]string, 0, len(flips))
 	rank := 0
 	for _, f := range flips {
@@ -48,19 +53,24 @@ func flipEvent(u *unstructured.Unstructured, flips []flip) pitcher.K8sEvent {
 			s += " (" + f.state.reason + ")"
 		}
 		parts = append(parts, s)
-		r := 1 // success
+		r := slices.Index(flipSeverities, "success")
 		switch {
 		case f.state.status == "False" && f.typ == "Ready":
-			r = 3
+			r = slices.Index(flipSeverities, "error")
 		case f.state.status != "True":
-			r = 2
+			r = slices.Index(flipSeverities, "warning")
+		}
+		if sev, ok := reasonSeverity[f.state.reason]; ok && f.state.reason != "" {
+			if i := slices.Index(flipSeverities, strings.ToLower(sev)); i > 0 {
+				r = i
+			}
 		}
 		rank = max(rank, r)
 	}
 	return pitcher.K8sEvent{
 		EventType: "update",
 		Title:     fmt.Sprintf("%s/%s %s", u.GetKind(), u.GetName(), strings.Join(parts, ", ")),
-		Severity:  []string{"", "success", "warning", "error"}[rank],
+		Severity:  flipSeverities[rank],
 	}
 }
 
@@ -180,7 +190,7 @@ func (t *conditionTracker) update(oldU, newU *unstructured.Unstructured) {
 	t.schedule(key, st, now)
 
 	if len(flips) > 0 {
-		t.m.pitch(t.spec, t.gvr, newU, flipEvent(newU, flips))
+		t.m.pitch(t.spec, t.gvr, newU, flipEvent(newU, flips, t.spec.ReasonSeverity))
 		return
 	}
 	if t.spec.Updates != profile.UpdatesFlips && oldU.GetGeneration() != newU.GetGeneration() {
@@ -244,7 +254,7 @@ func (t *conditionTracker) fire(key string, seq int) {
 	if len(flips) == 0 {
 		return
 	}
-	ev := flipEvent(st.obj, flips)
+	ev := flipEvent(st.obj, flips, t.spec.ReasonSeverity)
 	ev.Summary = fmt.Sprintf("Failing for %s (since %s)", longest.Round(time.Second), first.UTC().Format(time.RFC3339))
 	t.m.pitch(t.spec, t.gvr, st.obj, ev)
 }

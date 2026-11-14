@@ -34,7 +34,8 @@ problem and `spec.rateLimit: {max, per}` caps all messages, replacing the
 excess with one `k8s-pitcher: N events suppressed` warning per window.
 
 Condition informers take `ignoreStatuses`, `ignoreReasons` and `minDuration`
-(#89): flips to an ignored state (Flux `Progressing`, `DependencyNotReady`)
+(#89), and `reasonSeverity` (#98) to pitch a flip with a reason such as
+`Creating` at another severity instead of dropping it. The first three: flips to an ignored state (Flux `Progressing`, `DependencyNotReady`)
 are not pitched, and a failure is pitched only once it has lasted
 `minDuration`, its recovery only if the failure was pitched. The preset uses
 them for Kustomizations and HelmReleases (`[Unknown]`, `[Progressing,

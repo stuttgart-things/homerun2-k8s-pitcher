@@ -286,7 +286,7 @@ func TestUpdateEvent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ev, ok := updateEvent(tt.mode, tt.old, tt.new)
+			ev, ok := updateEvent(tt.mode, nil, tt.old, tt.new)
 			if ok != tt.want {
 				t.Fatalf("pitched = %v, want %v", ok, tt.want)
 			}

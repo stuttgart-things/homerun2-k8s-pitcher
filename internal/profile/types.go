@@ -249,6 +249,12 @@ type InformerSpec struct {
 	IgnoreStatuses []string      `yaml:"ignoreStatuses"`
 	IgnoreReasons  []string      `yaml:"ignoreReasons"`
 	MinDuration    time.Duration `yaml:"minDuration"`
+	// ReasonSeverity overrides the severity of a condition flip by the
+	// reason it flipped to (#98), e.g. Creating: info for claims whose
+	// Ready=False (Creating) is the normal start, not an error. With several
+	// flips in one update the highest severity wins. Unset keeps the
+	// transition severity.
+	ReasonSeverity map[string]string `yaml:"reasonSeverity"`
 }
 
 // Throttled reports whether the informer's events go through cooldown and
