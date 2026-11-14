@@ -400,3 +400,56 @@ func TestConditionFilterIgnoreOnlyBaseline(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// reasonSeverity (#98): Ready=False (Creating) is info, not error, both
+// without and with a condition filter; other reasons keep their severity.
+func TestReasonSeverity(t *testing.T) {
+	plain := profile.InformerSpec{
+		Group: "resources.stuttgart-things.com", Version: "v1alpha1", Resource: "nativevspherevms",
+		Events: []string{"update"}, Updates: profile.UpdatesConditions,
+		ReasonSeverity: map[string]string{"Creating": "info", "Deleting": "INFO", "Unhealthy": "critical"},
+	}
+	filtered := fluxSpec
+	filtered.MinDuration = 0
+	filtered.ReasonSeverity = plain.ReasonSeverity
+	for name, spec := range map[string]profile.InformerSpec{"plain": plain, "filtered": filtered} {
+		t.Run(name, func(t *testing.T) {
+			sim, mp, _, _ := newSim(t, spec)
+			sim.set("vm", "True", "Available")
+			sim.set("vm", "False", "Creating")       // info
+			sim.set("vm", "True", "Available")       // success
+			sim.set("vm", "False", "ReconcileError") // error, unchanged
+			sim.set("vm", "True", "Available")       // success
+			sim.set("vm", "False", "Unhealthy")      // raised to critical
+			sim.set("vm", "True", "Available")
+			sim.set("vm", "False", "Deleting") // value case-insensitive
+			want := "info:Kustomization/vm Ready=False (Creating) | success:Kustomization/vm Ready=True (Available) | " +
+				"error:Kustomization/vm Ready=False (ReconcileError) | success:Kustomization/vm Ready=True (Available) | " +
+				"critical:Kustomization/vm Ready=False (Unhealthy) | success:Kustomization/vm Ready=True (Available) | " +
+				"info:Kustomization/vm Ready=False (Deleting)"
+			if got := titles(mp.Events()); got != want {
+				t.Errorf("got  %q\nwant %q", got, want)
+			}
+		})
+	}
+}
+
+// With several flips in one update the highest severity wins, overrides
+// included; an unset map keeps the transition severity.
+func TestFlipEventReasonSeverityRank(t *testing.T) {
+	u := ks("vm", "False", "Creating")
+	flips := []flip{{"Ready", cond{"False", "Creating"}}, {"Synced", cond{"False", "ReconcileError"}}}
+	sev := map[string]string{"Creating": "info"}
+	if got := flipEvent(u, flips, sev).Severity; got != "warning" {
+		t.Errorf("info + warning = %q, want warning", got)
+	}
+	if got := flipEvent(u, flips[:1], sev).Severity; got != "info" {
+		t.Errorf("Creating alone = %q, want info", got)
+	}
+	if got := flipEvent(u, flips[:1], nil).Severity; got != "error" {
+		t.Errorf("no override = %q, want error", got)
+	}
+	if got := flipEvent(u, []flip{{"Ready", cond{"True", ""}}}, map[string]string{"": "error"}).Severity; got != "success" {
+		t.Errorf("empty reason must not match: %q", got)
+	}
+}

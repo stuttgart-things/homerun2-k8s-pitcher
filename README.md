@@ -131,11 +131,24 @@ findings.
 | `ignoreStatuses` | *(none)* | `updates: conditions` or `flips` only. Flips to these statuses (`Unknown`, `False`) are not pitched. See [Lasting failures only](#lasting-failures-only). |
 | `ignoreReasons` | *(none)* | `updates: conditions` or `flips` only. Flips to a condition with one of these reasons are not pitched. |
 | `minDuration` | `0` (off) | `updates: conditions` or `flips` only. A failure is pitched once it has lasted this long, e.g. `5m`. |
+| `reasonSeverity` | *(none)* | `updates: conditions` or `flips` only. Map from the reason a condition flipped to → severity (`info`, `success`, `warning`, `error`, `critical`), e.g. `Creating: info`. Overrides the transition severity below; keeps the flip, unlike `ignoreReasons`. |
 
 A flip is pitched as `VsphereVM/vm1 Ready=False (ReconcileError)`: `Ready` to
 `False` is `error`, `Synced` to `False` or either to `Unknown` `warning`, back
 to `True` `success`; a generation change is `info` (not with `updates: flips`). A condition that shows up
-for the first time is not a flip. Messages carry `system: k8s-<cluster>`, so
+for the first time is not a flip. `reasonSeverity` overrides the severity by
+reason (#98): for Crossplane claims `Ready=False (Creating)` is the normal start
+of every order, so
+
+```yaml
+    reasonSeverity:
+      Creating: info
+      Deleting: info
+```
+
+pitches it as `info` while `ReconcileError` stays `error`. With several flips in
+one update the highest severity wins (`success` < `info` < `warning` < `error` <
+`critical`). Messages carry `system: k8s-<cluster>`, so
 scout and the AI pitcher can tell clusters apart.
 
 Kubernetes `Event` objects (from an informer or a collector snapshot) take

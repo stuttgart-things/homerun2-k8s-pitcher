@@ -76,6 +76,9 @@ func validate(p *K8sPitcherProfile) error {
 		if err := validateConditionFilter(inf); err != nil {
 			return fmt.Errorf("spec.informers[%d]: %w", i, err)
 		}
+		if err := validateReasonSeverity(inf); err != nil {
+			return fmt.Errorf("spec.informers[%d]: %w", i, err)
+		}
 	}
 	if p.Spec.Cooldown < 0 {
 		return fmt.Errorf("spec.cooldown must not be negative")
@@ -215,6 +218,31 @@ func validateConditionFilter(inf InformerSpec) error {
 	for _, st := range inf.IgnoreStatuses {
 		if st != "False" && st != "Unknown" {
 			return fmt.Errorf("ignoreStatuses must be False or Unknown (got %q)", st)
+		}
+	}
+	return nil
+}
+
+// validateReasonSeverity allows reasonSeverity only on an informer that
+// pitches condition flips, with known severities as values.
+func validateReasonSeverity(inf InformerSpec) error {
+	if len(inf.ReasonSeverity) == 0 {
+		return nil
+	}
+	if inf.Updates != "" && !inf.WatchesFlips() {
+		return fmt.Errorf("reasonSeverity is only allowed with updates: conditions or flips (got %q)", inf.Updates)
+	}
+	if !slices.Contains(inf.Events, "update") {
+		return fmt.Errorf("reasonSeverity needs update in events")
+	}
+	for reason, sev := range inf.ReasonSeverity {
+		if reason == "" {
+			return fmt.Errorf("reasonSeverity: empty reason")
+		}
+		switch strings.ToLower(sev) {
+		case "info", "success", "warning", "error", "critical":
+		default:
+			return fmt.Errorf("reasonSeverity[%s] must be info, success, warning, error or critical (got %q)", reason, sev)
 		}
 	}
 	return nil

@@ -29,7 +29,7 @@ K8s API → informers (real-time add/update/delete)  → Redis Streams
 - `internal/collector/` — periodic gatherers: built-in kinds (Node, Pod, Event) or any GVR; `mode: snapshot` = one message per run with all objects as payload (#103)
 - `internal/inventory/` — inventory snapshot (`kind: Inventory`, #108): server version, nodes, images in use, Flux/Argo CD/Crossplane releases, payload `inventory/v1`
 - `internal/summary/` — message text per kind; `k8sgpt.go`: K8sGPT Results as findings (title, severity, error texts, #99), `Fingerprint`, `SnapshotHeader` (#103)
-- `internal/informer/` — dynamic informer manager (any GVR including CRDs); `conditions.go` filters condition flips (ignoreStatuses, ignoreReasons, minDuration timers, injectable clock, #89)
+- `internal/informer/` — dynamic informer manager (any GVR including CRDs); `conditions.go` filters condition flips (ignoreStatuses, ignoreReasons, minDuration timers, injectable clock, #89); `flipEvent` severity with `reasonSeverity` overrides (#98)
 - `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
 - `internal/config/` — logging setup
 - `internal/throttle/` — cooldown and rate limit around the pitcher (#87)

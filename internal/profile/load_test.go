@@ -556,11 +556,14 @@ spec:
 
 func TestLoadConditionFilterErrors(t *testing.T) {
 	tests := map[string]string{
-		"updates generation": `{ version: v1, resource: x, events: [update], updates: generation, minDuration: 5m }`,
-		"updates all":        `{ version: v1, resource: x, events: [update], updates: all, ignoreReasons: [Progressing] }`,
-		"no update events":   `{ version: v1, resource: x, events: [add, delete], ignoreStatuses: [Unknown] }`,
-		"negative duration":  `{ version: v1, resource: x, events: [update], minDuration: -5m }`,
-		"ignore True":        `{ version: v1, resource: x, events: [update], ignoreStatuses: [True] }`,
+		"updates generation":        `{ version: v1, resource: x, events: [update], updates: generation, minDuration: 5m }`,
+		"updates all":               `{ version: v1, resource: x, events: [update], updates: all, ignoreReasons: [Progressing] }`,
+		"no update events":          `{ version: v1, resource: x, events: [add, delete], ignoreStatuses: [Unknown] }`,
+		"negative duration":         `{ version: v1, resource: x, events: [update], minDuration: -5m }`,
+		"ignore True":               `{ version: v1, resource: x, events: [update], ignoreStatuses: [True] }`,
+		"reasonSeverity generation": `{ version: v1, resource: x, events: [update], updates: generation, reasonSeverity: { Creating: info } }`,
+		"reasonSeverity no update":  `{ version: v1, resource: x, events: [add], reasonSeverity: { Creating: info } }`,
+		"reasonSeverity bad value":  `{ version: v1, resource: x, events: [update], reasonSeverity: { Creating: loud } }`,
 	}
 	for name, inf := range tests {
 		path := writeTempFile(t, "spec:\n  redis: { addr: r, stream: s }\n  informers:\n    - "+inf+"\n")
@@ -619,5 +622,28 @@ func TestCollectorValidation(t *testing.T) {
 		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 			t.Errorf("%+v: err %v, want %q", tc.c, err, tc.want)
 		}
+	}
+}
+
+func TestLoadReasonSeverity(t *testing.T) {
+	p, err := Load(writeTempFile(t, `
+spec:
+  redis: { addr: r, stream: s }
+  informers:
+    - group: resources.stuttgart-things.com
+      version: v1alpha1
+      resource: nativevspherevms
+      events: [add, update, delete]
+      deleteSeverity: info
+      reasonSeverity:
+        Creating: info
+        Deleting: info
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := p.Spec.Informers[0].ReasonSeverity
+	if rs["Creating"] != "info" || rs["Deleting"] != "info" || len(rs) != 2 {
+		t.Errorf("reasonSeverity = %v", rs)
 	}
 }
