@@ -8,6 +8,7 @@ import clusterrole
 import configmap
 import secret
 import deploy
+import service
 
 # Export all manifests (filter out None values).
 # Namespace is NOT emitted from the KCL profile — the consuming Application
@@ -24,5 +25,7 @@ manifests = [
         secret.secretRedis
         secret.secretToken
         deploy.deployment
+        service.service
+        service.serviceMonitor
     ] if m
 ]

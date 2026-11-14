@@ -18,6 +18,7 @@ import (
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/informer"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/kube"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/pitcher"
+	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/probe"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/profile"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/throttle"
 	"github.com/stuttgart-things/homerun2-k8s-pitcher/internal/webhook"
@@ -166,6 +167,26 @@ func main() {
 		slog.Info("informers started", "count", len(prof.Spec.Informers))
 	}
 
+	// Start endpoint probes (#109) and their /metrics server, which runs on
+	// its own port, apart from the optional webhook server.
+	if pr := prof.Spec.Probes; pr.Enabled {
+		probeSystem := prof.ProbeSystemFor(kubeClient.ClusterName)
+		pm := probe.New(kubeClient.DynamicClient, p, pr, kubeClient.ClusterName, probeSystem)
+		go pm.Run(ctx)
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", pm.Metrics.Handler())
+		mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		serve(ctx, "metrics", pr.MetricsPort, mux)
+		slog.Info("endpoint probes started",
+			"system", probeSystem,
+			"interval", pr.Interval.String(),
+			"snapshotInterval", pr.SnapshotInterval.String(),
+			"metricsPort", pr.MetricsPort,
+		)
+	}
+
 	// Start webhook server if enabled
 	if prof.Spec.Webhook.Enabled {
 		port := prof.Spec.Webhook.Port
@@ -173,23 +194,7 @@ func main() {
 			port = "8080"
 		}
 		ws := webhook.NewServer(p, kubeClient.ClusterName, prof.Spec.Webhook.HMACKey)
-		srv := &http.Server{
-			Addr:              ":" + port,
-			Handler:           ws.Handler(),
-			ReadHeaderTimeout: 10 * time.Second,
-		}
-		go func() {
-			slog.Info("webhook server started", "port", port)
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("webhook server error", "error", err)
-			}
-		}()
-		go func() {
-			<-ctx.Done()
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			_ = srv.Shutdown(shutdownCtx)
-		}()
+		serve(ctx, "webhook", port, ws.Handler())
 	}
 
 	slog.Info("homerun2-k8s-pitcher running", "cluster", kubeClient.ClusterName, "system", system)
@@ -200,6 +205,27 @@ func main() {
 	// Give goroutines time to finish
 	time.Sleep(500 * time.Millisecond)
 	slog.Info("homerun2-k8s-pitcher exited gracefully")
+}
+
+// serve runs an HTTP server on port until ctx is done.
+func serve(ctx context.Context, name, port string, handler http.Handler) {
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		slog.Info(name+" server started", "port", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error(name+" server error", "error", err)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
 }
 
 // exitIfNotReady ends startup when waiting for the pitch target did not

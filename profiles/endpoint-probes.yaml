@@ -1,0 +1,68 @@
+# Endpoint probes (#109): heartbeat and TLS certificate checks for the hosts
+# of every Ingress and HTTPRoute plus explicit URLs, reported as findings/v1
+# messages with system endpoints-<cluster>:
+#
+#   state change   one message per finding that opens, changes severity or
+#                  resolves (severity success, no items); tag fp=<fingerprint>.
+#                  None from the first round after start: it only seeds the
+#                  state, the first snapshot carries what is open.
+#   snapshot       all open findings once per snapshotInterval; tag snapshot
+#
+# Findings:
+#   Endpoint     dns | connect | tls | status  (error)
+#   Certificate  expiry (warning < certWarnDays, error < certErrorDays or
+#                expired) | san (host not in the certificate, error)
+#
+# Prometheus metrics on :<metricsPort>/metrics: probe_success,
+# probe_duration_seconds, probe_http_status_code,
+# probe_cert_expiry_timestamp_seconds (labels host, target, kind, namespace,
+# name).
+#
+# Opt out per object with the annotation homerun2.sthings.io/probe: "false";
+# homerun2.sthings.io/probe-scheme (http|https) and
+# homerun2.sthings.io/probe-path override scheme and path.
+#
+# RBAC: list on ingresses (networking.k8s.io) and httproutes
+# (gateway.networking.k8s.io). An HTTPRoute API that is not served is skipped.
+apiVersion: homerun2.sthings.io/v1alpha1
+kind: K8sPitcherProfile
+metadata:
+  name: endpoint-probes
+spec:
+  cluster: my-cluster            # in-cluster there is no kubeconfig context
+  pitcher:
+    addr: https://omni.example.com/pitch
+  auth:
+    tokenFrom:
+      secretKeyRef:
+        name: omni-pitcher-token
+        namespace: homerun2
+        key: auth-token
+  # Repeats of the same state change within 30m are dropped.
+  cooldown: 30m
+  probes:
+    enabled: true
+    interval: 5m
+    timeout: 5s
+    snapshotInterval: 1h
+    # system: endpoints-my-cluster   # default endpoints-<cluster>
+    # expectedStatus: [200]          # default: any 2xx or 3xx
+    # An Endpoint finding opens after this many consecutive failed rounds
+    # (default 2, at least 1) and resolves on the first success; Certificate
+    # findings open at once.
+    failureThreshold: 2
+    certWarnDays: 14
+    certErrorDays: 3
+    # resolver: 10.96.0.10:53        # e.g. the cluster DNS
+    metricsPort: "9090"
+    discover:
+      ingress: true
+      httpRoute: true
+      namespace: "*"
+      httpRouteScheme: https
+    targets:
+      - name: homepage
+        url: https://www.example.com/
+      - url: https://internal.example.com/healthz
+        expectedStatus: [200]
+        insecureSkipVerify: true     # self-signed: skip the trust check only
