@@ -333,7 +333,7 @@ spec:
     timeout: 5s              # default 5s
     snapshotInterval: 1h     # default 1h
     # system: endpoints-<cluster>   (default)
-    # expectedStatus: [200]  # default: any 2xx/3xx; redirects are not followed
+    # expectedStatus: [200]  # default: any status below 500; redirects are not followed
     failureThreshold: 2      # default 2 (>= 1): consecutive failed rounds before an Endpoint finding opens
     certWarnDays: 14         # default 14
     certErrorDays: 3         # default 3

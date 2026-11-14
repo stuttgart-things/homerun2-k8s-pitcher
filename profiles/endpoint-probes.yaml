@@ -46,7 +46,7 @@ spec:
     timeout: 5s
     snapshotInterval: 1h
     # system: endpoints-my-cluster   # default endpoints-<cluster>
-    # expectedStatus: [200]          # default: any 2xx or 3xx
+    # expectedStatus: [200]          # default: any status below 500 (401 behind a login is up)
     # An Endpoint finding opens after this many consecutive failed rounds
     # (default 2, at least 1) and resolves on the first success; Certificate
     # findings open at once.

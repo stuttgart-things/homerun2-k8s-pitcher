@@ -53,7 +53,8 @@ type ProbesSpec struct {
 	// System of the probe messages; default endpoints-<cluster>.
 	System string `yaml:"system"`
 	// ExpectedStatus lists the accepted status codes; empty accepts any
-	// 2xx or 3xx. Redirects are not followed.
+	// status below 500 (a heartbeat: 401 behind a login is up). Redirects
+	// are not followed.
 	ExpectedStatus []int `yaml:"expectedStatus"`
 	// CertWarnDays and CertErrorDays: a certificate expiring within them is
 	// a warning (default 14) or an error (default 3).
