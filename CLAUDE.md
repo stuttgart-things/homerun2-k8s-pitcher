@@ -33,7 +33,8 @@ K8s API → informers (real-time add/update/delete)  → Redis Streams
 - `internal/pitcher/` — K8sEvent → Redis Streams via homerun-library
 - `internal/config/` — logging setup
 - `internal/throttle/` — cooldown and rate limit around the pitcher (#87)
-- `profiles/` — example YAML profiles (dev, production, crossplane-inventory, important-events, k8sgpt-results, inventory)
+- `internal/probe/` — endpoint probes (#109): `discover.go` Ingress/HTTPRoute hosts (opt-out annotation, unserved HTTPRoute skipped), `prober.go` GET + cert checks (injectable client, roots, clock), `findings.go` findings/v1 payload + fingerprint, `manager.go` rounds, state-change events, snapshots, `metrics.go` Prometheus `/metrics` (own server, `spec.probes.metricsPort`)
+- `profiles/` — example YAML profiles (dev, production, crossplane-inventory, important-events, k8sgpt-results, inventory, endpoint-probes)
 
 ## CLI Usage
 

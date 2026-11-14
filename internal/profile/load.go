@@ -2,8 +2,11 @@ package profile
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -44,8 +47,8 @@ func validate(p *K8sPitcherProfile) error {
 	}
 	// The webhook server runs on its own, so a profile that only receives
 	// Flux events is valid (#80).
-	if len(p.Spec.Collectors) == 0 && len(p.Spec.Informers) == 0 && !p.Spec.Webhook.Enabled {
-		return fmt.Errorf("at least one collector, informer or an enabled webhook must be defined")
+	if len(p.Spec.Collectors) == 0 && len(p.Spec.Informers) == 0 && !p.Spec.Webhook.Enabled && !p.Spec.Probes.Enabled {
+		return fmt.Errorf("at least one collector, informer, an enabled webhook or enabled probes must be defined")
 	}
 	for i, inf := range p.Spec.Informers {
 		if inf.Version == "" {
@@ -103,6 +106,73 @@ func validate(p *K8sPitcherProfile) error {
 			return fmt.Errorf("spec.collectors[%d].interval must be positive", i)
 		}
 	}
+	if err := validateProbes(p.Spec.Probes); err != nil {
+		return fmt.Errorf("spec.probes: %w", err)
+	}
+	return nil
+}
+
+// validateProbes checks spec.probes if enabled.
+func validateProbes(pr ProbesSpec) error {
+	if !pr.Enabled {
+		return nil
+	}
+	if !pr.Discover.Ingress && !pr.Discover.HTTPRoute && len(pr.Targets) == 0 {
+		return fmt.Errorf("enabled probes need discover.ingress, discover.httpRoute or targets")
+	}
+	if pr.Interval < 0 || pr.Timeout < 0 || pr.SnapshotInterval < 0 {
+		return fmt.Errorf("interval, timeout and snapshotInterval must not be negative")
+	}
+	if pr.FailureThreshold != nil && *pr.FailureThreshold < 1 {
+		return fmt.Errorf("failureThreshold must be at least 1 (got %d)", *pr.FailureThreshold)
+	}
+	if pr.CertWarnDays < 0 || pr.CertErrorDays < 0 {
+		return fmt.Errorf("certWarnDays and certErrorDays must not be negative")
+	}
+	warn := pr.CertWarnDays
+	if warn == 0 {
+		warn = DefaultCertWarnDays
+	}
+	if pr.CertErrorDays > warn {
+		return fmt.Errorf("certErrorDays (%d) must not exceed certWarnDays (%d)", pr.CertErrorDays, warn)
+	}
+	switch pr.Discover.HTTPRouteScheme {
+	case "", "http", "https":
+	default:
+		return fmt.Errorf("discover.httpRouteScheme must be http or https (got %q)", pr.Discover.HTTPRouteScheme)
+	}
+	if pr.Resolver != "" {
+		if _, _, err := net.SplitHostPort(pr.Resolver); err != nil {
+			return fmt.Errorf("resolver must be host:port (got %q)", pr.Resolver)
+		}
+	}
+	if pr.MetricsPort != "" {
+		if n, err := strconv.Atoi(pr.MetricsPort); err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("metricsPort must be a port number (got %q)", pr.MetricsPort)
+		}
+	}
+	if err := validateStatus(pr.ExpectedStatus); err != nil {
+		return err
+	}
+	for i, t := range pr.Targets {
+		u, err := url.Parse(t.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+			return fmt.Errorf("targets[%d].url must be an http or https URL (got %q)", i, t.URL)
+		}
+		if err := validateStatus(t.ExpectedStatus); err != nil {
+			return fmt.Errorf("targets[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// validateStatus accepts only HTTP status codes.
+func validateStatus(codes []int) error {
+	for _, c := range codes {
+		if c < 100 || c > 599 {
+			return fmt.Errorf("expectedStatus must hold HTTP status codes (got %d)", c)
+		}
+	}
 	return nil
 }
 
@@ -154,6 +224,29 @@ func applyDefaults(p *K8sPitcherProfile) {
 	if p.Spec.Redis.Port == "" {
 		p.Spec.Redis.Port = "6379"
 	}
+	if pr := &p.Spec.Probes; pr.Enabled {
+		if pr.Interval == 0 {
+			pr.Interval = DefaultProbeInterval
+		}
+		if pr.Timeout == 0 {
+			pr.Timeout = DefaultProbeTimeout
+		}
+		if pr.SnapshotInterval == 0 {
+			pr.SnapshotInterval = DefaultProbeSnapshotInterval
+		}
+		if pr.CertWarnDays == 0 {
+			pr.CertWarnDays = DefaultCertWarnDays
+		}
+		if pr.CertErrorDays == 0 {
+			pr.CertErrorDays = min(DefaultCertErrorDays, pr.CertWarnDays)
+		}
+		if pr.MetricsPort == "" {
+			pr.MetricsPort = DefaultMetricsPort
+		}
+		if pr.Discover.HTTPRouteScheme == "" {
+			pr.Discover.HTTPRouteScheme = "https"
+		}
+	}
 	for i := range p.Spec.Informers {
 		if p.Spec.Informers[i].Namespace == "" {
 			p.Spec.Informers[i].Namespace = "*"
@@ -162,6 +255,14 @@ func applyDefaults(p *K8sPitcherProfile) {
 			p.Spec.Informers[i].Updates = UpdatesConditions
 		}
 	}
+}
+
+// ProbeSystemFor returns spec.probes.system, or endpoints-<cluster>.
+func (p *K8sPitcherProfile) ProbeSystemFor(cluster string) string {
+	if p.Spec.Probes.System != "" {
+		return p.Spec.Probes.System
+	}
+	return "endpoints-" + cluster
 }
 
 // SystemFor returns spec.system, or k8s-<cluster>.

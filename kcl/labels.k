@@ -18,6 +18,11 @@ _namespaceScoped = option("config.namespaceScoped")
 _trustBundleConfigMap = option("config.trustBundleConfigMap")
 _extraRbacRules = option("config.extraRbacRules") or []
 _extraEnvVars = option("config.extraEnvVars") or {}
+_probesEnabled = option("config.probesEnabled")
+_metricsPort = option("config.metricsPort")
+_serviceMonitor = option("config.serviceMonitor")
+_serviceMonitorInterval = option("config.serviceMonitorInterval")
+_serviceMonitorLabels = option("config.serviceMonitorLabels") or {}
 
 # Config instance with command-line overrides
 config: schema.K8sPitcher = schema.K8sPitcher {
@@ -47,6 +52,16 @@ config: schema.K8sPitcher = schema.K8sPitcher {
         extraRbacRules = _extraRbacRules
     if _extraEnvVars:
         extraEnvVars = _extraEnvVars
+    if _probesEnabled:
+        probesEnabled = _probesEnabled in [True, "True", "true"]
+    if _metricsPort:
+        metricsPort = int(_metricsPort)
+    if _serviceMonitor:
+        serviceMonitor = _serviceMonitor in [True, "True", "true"]
+    if _serviceMonitorInterval:
+        serviceMonitorInterval = _serviceMonitorInterval
+    if _serviceMonitorLabels:
+        serviceMonitorLabels = _serviceMonitorLabels
 }
 
 # Common labels applied to all resources

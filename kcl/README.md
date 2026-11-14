@@ -62,6 +62,11 @@ kubectl apply -f /tmp/rendered-k8s-pitcher.yaml
 | `config.trustBundleConfigMap` | *(empty)* | ConfigMap name with `trust-bundle.pem` for custom CA (adds volume mount + `SSL_CERT_DIR`) |
 | `config.extraRbacRules` | `[]` | Extra RBAC rules for CRDs (list of `{apiGroups, resources, verbs}`) |
 | `config.extraEnvVars` | `{}` | Additional environment variables |
+| `config.probesEnabled` | `false` | Endpoint probes (#109): RBAC for `ingresses`/`httproutes`, `metrics` container port, Service `<name>-metrics`. Enable the probes themselves in `profileYaml` (`spec.probes`) |
+| `config.metricsPort` | `9090` | Metrics port; must match `spec.probes.metricsPort` |
+| `config.serviceMonitor` | `false` | With `probesEnabled`: emit a `ServiceMonitor` (Prometheus Operator) |
+| `config.serviceMonitorInterval` | `60s` | Scrape interval of the ServiceMonitor |
+| `config.serviceMonitorLabels` | `{}` | Extra labels on the ServiceMonitor (e.g. `release: kube-prometheus-stack`) |
 | `config.cpuRequest` | `100m` | CPU request |
 | `config.cpuLimit` | `500m` | CPU limit |
 | `config.memoryRequest` | `256Mi` | Memory request |

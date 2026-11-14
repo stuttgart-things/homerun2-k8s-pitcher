@@ -29,7 +29,19 @@ _rules = [
         verbs: rule.verbs or ["get", "list", "watch"]
     }
     for rule in config.extraRbacRules
-]
+] + ([
+    # Endpoint probes (#109) discover the hosts of Ingresses and HTTPRoutes.
+    {
+        apiGroups: ["networking.k8s.io"]
+        resources: ["ingresses"]
+        verbs: ["get", "list", "watch"]
+    }
+    {
+        apiGroups: ["gateway.networking.k8s.io"]
+        resources: ["httproutes"]
+        verbs: ["get", "list", "watch"]
+    }
+] if config.probesEnabled else [])
 
 # Cluster-scoped variant (default).
 clusterRole = {

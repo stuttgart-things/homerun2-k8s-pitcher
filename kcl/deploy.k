@@ -62,6 +62,14 @@ deployment = {
                                 value: "/etc/ssl/custom"
                             }
                         ] if config.trustBundleConfigMap else [])
+                        if config.probesEnabled:
+                            ports: [
+                                {
+                                    name: "metrics"
+                                    containerPort: config.metricsPort
+                                    protocol: "TCP"
+                                }
+                            ]
                         resources: {
                             requests: {
                                 cpu: config.cpuRequest

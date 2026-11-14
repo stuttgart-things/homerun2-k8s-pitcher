@@ -9,7 +9,8 @@ Go microservice that watches a Kubernetes cluster via dynamic informers and peri
 ```
 K8s API → informers (real-time add/update/delete)  ─┐
         → collectors (periodic snapshots)            ├→ Redis Streams / HTTP pitcher
-Flux    → webhook (notification controller events)  ─┘
+Flux    → webhook (notification controller events)  ─┤
+Ingress/HTTPRoute hosts → endpoint probes (#109)     ─┘ (+ /metrics)
 ```
 
 ### Pitcher Modes
@@ -314,6 +315,97 @@ spec:
 - Exception: an informer or collector with `throttle: false` bypasses both,
   and its events do not count toward the window (#102). Meant for data that
   goes only to an archive, such as K8sGPT findings.
+
+## Endpoint Probes
+
+`spec.probes` (#109) checks the cluster's endpoints: the hosts of every
+`Ingress` (`spec.rules[].host`, https if the host is in `spec.tls`) and
+`HTTPRoute` (`spec.hostnames`, https by default) plus explicit URLs. The path
+is the first path of the rule (Ingress) or the first match (HTTPRoute); a
+regex-like path becomes `/`. An `HTTPRoute` API that is not served is skipped
+until it is. See `profiles/endpoint-probes.yaml`.
+
+```yaml
+spec:
+  probes:
+    enabled: true
+    interval: 5m             # default 5m
+    timeout: 5s              # default 5s
+    snapshotInterval: 1h     # default 1h
+    # system: endpoints-<cluster>   (default)
+    # expectedStatus: [200]  # default: any 2xx/3xx; redirects are not followed
+    failureThreshold: 2      # default 2 (>= 1): consecutive failed rounds before an Endpoint finding opens
+    certWarnDays: 14         # default 14
+    certErrorDays: 3         # default 3
+    # resolver: 10.96.0.10:53  # DNS server for the probes, default system resolver
+    metricsPort: "9090"      # default 9090
+    # throttle: false        # state change events bypass cooldown/rateLimit
+    discover:
+      ingress: true
+      httpRoute: true
+      namespace: "*"         # "*" (default), "@self" or a namespace
+      httpRouteScheme: https # or http
+    targets:                 # explicit endpoints, e.g. outside the cluster
+      - name: homepage       # default: the URL's host
+        url: https://www.example.com/
+        expectedStatus: [200]
+        insecureSkipVerify: false  # true skips the trust check only
+```
+
+Annotations on an Ingress or HTTPRoute:
+
+| Annotation | Effect |
+|---|---|
+| `homerun2.sthings.io/probe: "false"` | not probed |
+| `homerun2.sthings.io/probe-scheme: http\|https` | overrides the scheme |
+| `homerun2.sthings.io/probe-path: /healthz` | overrides the path |
+
+**Checks per target**: HTTP GET (status, latency), DNS, connect and TLS
+errors, and over TLS the leaf certificate: days to expiry (`warning` below
+`certWarnDays`, `error` below `certErrorDays` or expired), SAN match and chain
+trust (system roots; `insecureSkipVerify` skips only the trust check).
+
+| Finding kind | check | severity |
+|---|---|---|
+| `Endpoint` | `dns`, `connect`, `tls` (handshake failed, chain not trusted), `status` | `error` |
+| `Certificate` | `expiry` | `warning` / `error` |
+| `Certificate` | `san` (host not in the certificate) | `error` |
+
+**Messages** follow the `findings/v1` contract (system `endpoints-<cluster>`,
+payload `{format, source: endpoints, target: <cluster>, count, items[,
+truncated]}`, items `{fingerprint, kind, name, namespace, parent, severity,
+texts}`). The fingerprint is the first 16 hex characters of
+sha256(`endpoints|<cluster>|<kind>|<namespace>/<name>|<check>`), without the
+texts, so it stays while the problem does. `name` is the host (the target's
+name for explicit targets), `parent` the `Ingress/<ns>/<name>` or
+`HTTPRoute/<ns>/<name>`.
+
+- **State change** (no `snapshot` tag, tag `fp=<fingerprint>`): a finding
+  opened (`opened`), changed its severity (`changed`, e.g. a certificate
+  entering the error window) or resolved (`resolved`, severity `success`,
+  empty `items`). Throttled by `spec.cooldown`/`spec.rateLimit` unless
+  `throttle: false`. An `Endpoint` finding opens only after
+  `failureThreshold` consecutive failed rounds (default 2) and resolves on
+  the first success; `Certificate` findings open at once. The first round
+  after start sends no events: it seeds the state (everything found counts
+  as open, without threshold) and the first snapshot carries it, so a
+  restart does not re-send `opened` for known problems; their later recovery
+  is still sent as `resolved`. A target that disappears (object deleted or
+  opted out) drops its findings without a resolve. A failed pitch is retried
+  next round.
+- **Snapshot** (tag `snapshot`): all open findings after the first round and
+  then every `snapshotInterval`, severity = worst finding or `success`; never
+  throttled. Above 256 KiB the worst findings are kept and `truncated` holds
+  the number omitted (`count` stays the total).
+
+**Metrics** on `:<metricsPort>/metrics` (own server, separate from the
+webhook port; also `/healthz`), labels `host`, `target` (URL), `kind`
+(`Ingress`, `HTTPRoute`, `Target`), `namespace`, `name`:
+`probe_success`, `probe_duration_seconds`, `probe_http_status_code`,
+`probe_cert_expiry_timestamp_seconds` (TLS targets only), plus Go and
+process metrics. RBAC needs `list` on `ingresses` and `httproutes`; the KCL
+`config.probesEnabled` adds it with the port, a Service and optionally a
+ServiceMonitor.
 
 ## Flux Notification Webhook
 

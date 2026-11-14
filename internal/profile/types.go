@@ -33,7 +33,96 @@ type Spec struct {
 	Cooldown time.Duration `yaml:"cooldown"`
 	// RateLimit caps the messages of all sources; off if unset.
 	RateLimit *RateLimit `yaml:"rateLimit"`
+	// Probes checks the HTTP(S) endpoints of Ingress and HTTPRoute hosts and
+	// explicit URLs: heartbeat and TLS certificate (#109).
+	Probes ProbesSpec `yaml:"probes"`
 }
+
+// ProbesSpec configures the endpoint prober (#109). Its findings go out as
+// findings/v1 messages with system endpoints-<cluster>, its results as
+// Prometheus metrics on /metrics.
+type ProbesSpec struct {
+	Enabled bool `yaml:"enabled"`
+	// Interval between two probe rounds (default 5m).
+	Interval time.Duration `yaml:"interval"`
+	// Timeout of a single probe (default 5s).
+	Timeout time.Duration `yaml:"timeout"`
+	// SnapshotInterval between two snapshots of all open findings (default
+	// 1h; the analysis marks a target stale after 3h).
+	SnapshotInterval time.Duration `yaml:"snapshotInterval"`
+	// System of the probe messages; default endpoints-<cluster>.
+	System string `yaml:"system"`
+	// ExpectedStatus lists the accepted status codes; empty accepts any
+	// 2xx or 3xx. Redirects are not followed.
+	ExpectedStatus []int `yaml:"expectedStatus"`
+	// CertWarnDays and CertErrorDays: a certificate expiring within them is
+	// a warning (default 14) or an error (default 3).
+	CertWarnDays  int `yaml:"certWarnDays"`
+	CertErrorDays int `yaml:"certErrorDays"`
+	// Resolver is a DNS server (host:port) for the probes, e.g. the cluster
+	// DNS when some hosts only resolve inside; default the system resolver.
+	Resolver string `yaml:"resolver"`
+	// FailureThreshold is the number of consecutive failed rounds before an
+	// Endpoint finding opens (default 2, at least 1); it resolves on the
+	// first success. Certificate findings open at once.
+	FailureThreshold *int `yaml:"failureThreshold"`
+	// MetricsPort serves /metrics (default 9090).
+	MetricsPort string `yaml:"metricsPort"`
+	// Throttle false bypasses spec.cooldown and spec.rateLimit for the state
+	// change events (snapshots always bypass them). Default true.
+	Throttle *bool         `yaml:"throttle"`
+	Discover ProbeDiscover `yaml:"discover"`
+	Targets  []ProbeTarget `yaml:"targets"`
+}
+
+// Throttled reports whether the probe events go through cooldown and rate
+// limit (default true).
+func (p ProbesSpec) Throttled() bool { return p.Throttle == nil || *p.Throttle }
+
+// Threshold returns failureThreshold, DefaultFailureThreshold if unset.
+func (p ProbesSpec) Threshold() int {
+	if p.FailureThreshold == nil {
+		return DefaultFailureThreshold
+	}
+	return *p.FailureThreshold
+}
+
+// ProbeDiscover selects the resources whose hosts are probed. An Ingress or
+// HTTPRoute with the annotation homerun2.sthings.io/probe: "false" is left
+// out.
+type ProbeDiscover struct {
+	Ingress   bool `yaml:"ingress"`
+	HTTPRoute bool `yaml:"httpRoute"`
+	// Namespace limits discovery ("*" or empty: all, "@self": own).
+	Namespace string `yaml:"namespace"`
+	// HTTPRouteScheme is the scheme of HTTPRoute hosts, https (default) or
+	// http; the annotation homerun2.sthings.io/probe-scheme overrides it per
+	// route.
+	HTTPRouteScheme string `yaml:"httpRouteScheme"`
+}
+
+// ProbeTarget is an explicit endpoint, e.g. outside the cluster.
+type ProbeTarget struct {
+	// Name of the target in findings and metrics; default the URL's host.
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
+	// ExpectedStatus overrides spec.probes.expectedStatus.
+	ExpectedStatus []int `yaml:"expectedStatus"`
+	// InsecureSkipVerify skips the trust check of the certificate chain;
+	// expiry and SAN are still reported.
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
+}
+
+// Probe defaults.
+const (
+	DefaultProbeInterval         = 5 * time.Minute
+	DefaultProbeTimeout          = 5 * time.Second
+	DefaultProbeSnapshotInterval = time.Hour
+	DefaultCertWarnDays          = 14
+	DefaultCertErrorDays         = 3
+	DefaultMetricsPort           = "9090"
+	DefaultFailureThreshold      = 2
+)
 
 // RateLimit allows Max messages per window. Messages above it are dropped
 // and, once per window, replaced by a single "N events suppressed" warning.

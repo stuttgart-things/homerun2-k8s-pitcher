@@ -50,6 +50,16 @@ schema K8sPitcher:
     # Extra RBAC rules for CRDs (list of {apiGroups: [str], resources: [str]})
     extraRbacRules: [{str:}] = []
 
+    # Endpoint probes (#109). True adds RBAC to list ingresses and httproutes,
+    # the metrics container port, a Service for /metrics and, with
+    # serviceMonitor, a ServiceMonitor. The probes themselves are enabled in
+    # profileYaml (spec.probes); metricsPort must match spec.probes.metricsPort.
+    probesEnabled: bool = False
+    metricsPort: int = 9090
+    serviceMonitor: bool = False
+    serviceMonitorInterval: str = "60s"
+    serviceMonitorLabels: {str:str} = {}
+
     # Extra environment variables
     extraEnvVars: {str:str} = {}
 
@@ -61,3 +71,4 @@ schema K8sPitcher:
         replicas >= 0, "replicas must be >= 0"
         name != "", "name must not be empty"
         namespace != "", "namespace must not be empty"
+        metricsPort > 0 and metricsPort < 65536, "metricsPort must be a port number"
