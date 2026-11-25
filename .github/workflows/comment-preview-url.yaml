@@ -32,7 +32,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-comment-preview-url.yaml@main
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-comment-preview-url.yaml@15bb803fd72658fda50120f8a566d5594061e6ee # v1.2.0
     with:
       # k8s-pitcher has no UI of its own — it watches the PR namespace and
       # pitches events through omni-pitcher into Redis. The review surface is

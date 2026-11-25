@@ -28,7 +28,7 @@ on:
 
 jobs:
   techdocs:
-    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-techdocs.yaml@main
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-techdocs.yaml@15bb803fd72658fda50120f8a566d5594061e6ee # v1.2.0
     with:
       publish: ${{ github.event_name != 'pull_request' && vars.TECHDOCS_PUBLISH == 'true' }}
       # Building needs no lab access; only the upload goes to the lab MinIO.
